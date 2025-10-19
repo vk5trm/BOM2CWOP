@@ -3,12 +3,26 @@
 #  BOM JSON Observation to APRS Uploader
 #  Robert Middelmann <vk5trm@gmail.com>
 #  Mark Jessop <vk5qi@rfhead.net>
-#  2018-01-06
+#  2025-10-19
 #
-#       This is intended to be run as a regular (30 minute) cron job.
-#       This Python script will only work in Austraila using the Australian Bureau of Meteorology data 
-#       Update the TAR_PATH, APRS_CALL, APRS_PASSCODE(00000 for CWOP server)  and Station > APRS call mapping(STATION_JSON) Fields below before using.
-#       Put the name of the TGZ file from the list below of the state you want in the TAR_PATH in the Settings for FTP download  
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# This is intended to be run as a regular (30 minute) cron job.
+# This Python script will only work in Austraila using the Australian Bureau of Meteorology data 
+# Update the TAR_PATH, APRS_CALL, APRS_PASSCODE(00000 for CWOP server)  and Station > APRS call mapping(STATION_JSON) Fields below before using.
+# Put the name of the TGZ file from the list below of the state you want in the TAR_PATH in the Settings for FTP download  
 #    
 #       /anon/gen/fwo/IDN60910.tgz	Weather Observations 72hr History - New South Wales and Australian Capital Territory
 #       /anon/gen/fwo/IDV60910.tgz	Weather Observations 72hr History - Victoria
@@ -18,8 +32,8 @@
 #       /anon/gen/fwo/IDT60910.tgz	Weather Observations 72hr History - Tasmania
 #       /anon/gen/fwo/IDD60910.tgz	Weather Observations 72hr History - Northern Territory
 #
-#       Download manualy the state you are interested in and open the gzfile and find the name of file in json format of area you are interested in and put the .json 
-#       file name in the STATION_JSON= with mapping to a callsign in the Settings below. You can have as many SSID mapping as you like 
+# Download manualy the state you are interested in and open the gzfile and find the name of file in json format of area you are interested in and put the .json 
+# file name in the STATION_JSON= with mapping to a callsign in the Settings below. You can have as many SSID mapping as you like 
 #
 #
 import json
