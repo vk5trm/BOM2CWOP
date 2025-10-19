@@ -318,7 +318,7 @@ if __name__ == '__main__':
             try:
                 obs = observations[0]
                 # Use the station "name" field from the JSON (station_name), fallback to filename if not present.
-                comment = station_name or ("BOMWX %s" % station_filename)
+                comment = ("%s WX" % station_name) or ("BOMWX %s" % station_filename)
                 aprs_str = bom_json_to_aprs(obs, comment=comment)
                 if not aprs_str:
                     print("Skipping invalid observation for %s" % station_filename)
