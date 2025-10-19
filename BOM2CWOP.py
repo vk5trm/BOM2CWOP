@@ -19,7 +19,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
-# This is intended to be run as a regular (30 minute) cron job.
+# This is intended to be run as a regular (10 to 15 minute) cron job.
 # This Python script will only work in Austraila using the Australian Bureau of Meteorology data 
 # Update the TAR_PATH, APRS_CALL, APRS_PASSCODE(00000 for CWOP server)  and Station > APRS call mapping(STATION_JSON) Fields below before using.
 # Put the name of the TGZ file from the list below of the state you want in the TAR_PATH in the Settings for FTP download  
