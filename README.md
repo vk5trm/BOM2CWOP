@@ -1,8 +1,7 @@
 # BOM2CWOP
 Australian Bureau of Meteorology Observations to APRS CWOP Uploader 
  This is intended to be run as a regular (10 to 20 minute) cron job. 
-       This Python script will only work in Austraila using the  
-       Australian Bureau of Meteorology data  
+       This Python script will only work in Austraila using the Australian Bureau of Meteorology data  
        Update the TAR_PATH, APRS_CALL, APRS_PASSCODE (00000 for CWOP) 
        and Station filename in the (STATION_JSON) Fields before using. 
        Put the name of the TGZ file from the list below of the state 
