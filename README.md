@@ -4,7 +4,7 @@ Australian Bureau of Meteorology Observations to APRS CWOP Uploader
        This Python script will only work in Austraila using the  
        Australian Bureau of Meteorology data  
        Update the TAR_PATH, APRS_CALL, APRS_PASSCODE (00000 for CWOP) 
-       and Station > APRS call mapping(STATION_JSON) Fields before using. 
+       and Station filename in the (STATION_JSON) Fields before using. 
        Put the name of the TGZ file from the list below of the state 
        you want in the TAR_PATH in the Settings for FTP download   
            
@@ -18,5 +18,5 @@ Australian Bureau of Meteorology Observations to APRS CWOP Uploader
 
        Download manualy the state you are interested in and open the gzfile 
        and find the name of file in json format of area you are interested in 
-       and put the .json file name in the STATION_JSON= with mapping to a callsign 
-       in the Settings below. You can have as many SSID mapping as you like  
+       and put the .json file name in the STATION_JSON= in the Settings.
+         
