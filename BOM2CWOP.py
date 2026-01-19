@@ -34,11 +34,11 @@ from socket import *
 FTP_SERVER = "ftp.bom.gov.au"
 TAR_PATH = "/anon/gen/fwo/IDS60910.tgz"
 
-# List of JSON filenames to fetch from the TAR archive (no mapping - station_name will be used as wx_call)
-STATION_JSON = [
-    "IDS60910.94682.json",
-    "IDS60910.95687.json",
-]
+# STATION_JSON mapping: json filename (as in archive or basename) -> APRS wx_call
+STATION_JSON = {
+    "IDS60910.94682.json": "VK5TRM-13",
+    "IDS60910.95687.json": "VK5TRM-15",
+}
 
 APRS_CALL = 'VK5TRM-13'    # login user for APRS-IS session (fallback)
 APRS_PASSCODE = 00000
@@ -177,6 +177,24 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
     )
 
 
+def _normalize_station_json_param(station_json):
+    # expected to be a dict mapping filename->wx_call
+    if station_json is None:
+        return [], {}
+    if isinstance(station_json, dict):
+        wanted = [k for k in station_json.keys() if k and str(k).strip()]
+        mapping = {k: v for k, v in station_json.items() if k and str(k).strip()}
+        return wanted, mapping
+    if isinstance(station_json, str):
+        s = station_json.strip()
+        if s == '' or s == '*':
+            return [], {}
+        parts = [p.strip() for p in s.split(',') if p.strip()]
+        mapping = {p: APRS_CALL for p in parts}
+        return parts, mapping
+    return [], {}
+
+
 def get_bom_jsons(ftp_server, tar_path, wanted_list):
     if not wanted_list:
         print("ERROR: No STATION_JSON filenames provided")
@@ -191,7 +209,9 @@ def get_bom_jsons(ftp_server, tar_path, wanted_list):
         result = []
         with tarfile.open(fileobj=tar_bytes, mode='r:gz') as tar:
             names = tar.getnames()
+            # print("DEBUG: requested/wanted list:", wanted_list)
             candidates = [n for n in names if n in wanted_list or os.path.basename(n) in wanted_list]
+            # print("DEBUG: matched candidates:", candidates)
             if not candidates:
                 print("No matching JSON files found in archive for the requested filenames.")
                 return []
@@ -204,6 +224,12 @@ def get_bom_jsons(ftp_server, tar_path, wanted_list):
                     json_data = extracted.read().decode()
                     parsed_data = json.loads(json_data)
                     observations_list = parsed_data.get('observations', {}).get('data', [])
+                    # Debug: show structure keys to help identify where name is
+                    try:
+                        obs_keys = parsed_data.get('observations', {}).keys()
+                    except Exception:
+                        obs_keys = None
+                    # print(f"DEBUG: {cand} observations keys: {obs_keys}; top-level keys: {list(parsed_data.keys())}")
                     # determine station name robustly by trying multiple likely locations
                     station_name = None
                     header = parsed_data.get('observations', {}).get('header')
@@ -240,11 +266,21 @@ def get_bom_jsons(ftp_server, tar_path, wanted_list):
         return []
 
 
+def determine_aprs_call_for_file(station_filename, mapping):
+    if not mapping:
+        return APRS_CALL
+    if station_filename in mapping:
+        return mapping[station_filename] or APRS_CALL
+    base = os.path.basename(station_filename)
+    if base in mapping:
+        return mapping[base] or APRS_CALL
+    return APRS_CALL
+
+
 if __name__ == '__main__':
-    # STATION_JSON is now a list of filenames; mapping logic removed
-    wanted = STATION_JSON if isinstance(STATION_JSON, (list, tuple)) else []
+    wanted, aprs_mapping = _normalize_station_json_param(STATION_JSON)
     if not wanted:
-        print("ERROR: STATION_JSON must be a non-empty list of filenames. Exiting.")
+        print("ERROR: STATION_JSON must be mapping or comma-separated filenames. Exiting.")
         sys.exit(1)
 
     station_obs_list = get_bom_jsons(FTP_SERVER, TAR_PATH, wanted)
@@ -271,16 +307,7 @@ if __name__ == '__main__':
                 if not aprs_str:
                     print("Skipping invalid observation for %s" % station_filename)
                     continue
-                # Build wx_call: truncate at first space (if present) or to 9 characters; fallback to filename
-                raw_name = str(station_name or "").strip()
-                if raw_name == "":
-                    wx_call = os.path.basename(station_filename)[:9]
-                else:
-                    # take substring before first space if any
-                    first_part = raw_name.split(' ')[0]
-                    wx_call = first_part[:9]
-                # ensure no remaining spaces (defensive) and replace with underscores if any
-                wx_call = wx_call.replace(' ', '_')
+                wx_call = determine_aprs_call_for_file(station_filename, aprs_mapping)
                 print("Using APRS call '%s' for station file %s" % (wx_call, station_filename))
                 print("CWOP String: %s" % aprs_str)
                 aprs_client.send_packet(wx_call, aprs_str)
