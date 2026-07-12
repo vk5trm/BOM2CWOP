@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 #
 #  BOM JSON Observation to APRS Uploader
 #  Robert Middelmann <vk5trm@gmail.com>
@@ -7,6 +8,7 @@
 #  Rob VK5TRM 2026-07-12 -Fixed HTTP API Version - Fixed for 403)
 #  Modified to include Browser-like headers to bypass BOM WAF
 #
+
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
@@ -21,54 +23,57 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
-#
-#
+
 import json
 import sys
-import traceback
 import time
 from socket import *
 import requests
 
-# --- SETTINGS ---
+# --- USER CONFIGURATION ---
 
-# BOM API Configuration
-# The public JSON endpoint structure.
-# Format: http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json
-# Note: BOM blocks requests without a proper User-Agent.
-BOM_BASE_URL = "http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json"
+# 1. State Configuration
+# Set your state here using the abbreviation or full name.
+# Options: 'NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT'
+USER_STATE = 'SA' 
 
-# Station Configuration: Station ID -> APRS Call
-# You must match the Product Code to the State/Region of the station.
-#  IDN60910:	New South Wales and Australian Capital Territory 
-#  IDV60910:	Victoria 
-#  IDQ60910:	Queensland 
-#  IDS60910:	South Australia 
-#  IDW60910:    Western Australia 
-#  IDT60910:	Tasmania 
-#  IDD60910:	Northern Territory 
-#
-BOM_PRODUCT_CODE = "IDS60910"
-#
-#
+# 2. Station Configuration: Station ID -> APRS Call
+# Ensure these station IDs match the region of your selected state.
 STATION_CONFIG = {
     "94682": "VK5TRM-12",  # Example: A SA station
     "95687": "VK5TRM-15",  # Example: Another SA station
 }
-# APRS Configuration
+
+# 3. APRS Configuration
 APRS_CALL = 'VK5TRM-13'    
-APRS_PASSCODE = 00000      # ⚠️ WARNING: Replace with your real passcode (calculated via APRS passcode calculator)
+APRS_PASSCODE = 00000      # ⚠️ WARNING: Replace with your real passcode
 APRS_SERVER = 'cwop.aprs.net'
 APRS_PORT = 14580
 
-#!/usr/bin/env python3
+# --- SYSTEM CONFIGURATION & MAPPINGS ---
 
-#
-#  BOM JSON Observation to APRS Uploader (Clean Version - SA)
-#  Product Code: IDS60910 (South Australia)
-#
-#
-#
+# Mapping of State Abbreviations to BOM Product Codes
+STATE_TO_PRODUCT_CODE = {
+    "NSW": "IDN60910",
+    "NEW SOUTH WALES": "IDN60910",
+    "ACT": "IDN60910",
+    "VIC": "IDV60910",
+    "VICTORIA": "IDV60910",
+    "QLD": "IDQ60910",
+    "QUEENSLAND": "IDQ60910",
+    "SA": "IDS60910",
+    "SOUTH AUSTRALIA": "IDS60910",
+    "WA": "IDW60910",
+    "WESTERN AUSTRALIA": "IDW60910",
+    "TAS": "IDT60910",
+    "TASMANIA": "IDT60910",
+    "NT": "IDD60910",
+    "NORTHERN TERRITORY": "IDD60910"
+}
+
+# BOM API URL Template
+BOM_BASE_URL = "http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json"
+
 # HTTP Headers to mimic a browser (Required to bypass 403)
 HTTP_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
@@ -78,6 +83,19 @@ HTTP_HEADERS = {
     'Connection': 'keep-alive',
     'Upgrade-Insecure-Requests': '1'
 }
+
+# --- STATE RESOLUTION LOGIC ---
+# This runs after all configs are defined to resolve the Product Code.
+
+clean_state = USER_STATE.upper().strip()
+if clean_state in STATE_TO_PRODUCT_CODE:
+    BOM_PRODUCT_CODE = STATE_TO_PRODUCT_CODE[clean_state]
+    print(f"Configured for State: {USER_STATE} -> Product Code: {BOM_PRODUCT_CODE}")
+else:
+    print(f"Error: Invalid state '{USER_STATE}'. Please use one of: {list(STATE_TO_PRODUCT_CODE.keys())}")
+    sys.exit(1)
+
+# --- Helper Classes & Functions ---
 
 class APRSClient:
     def __init__(self, user, passwd, host=APRS_SERVER, port=APRS_PORT, timeout=10):
@@ -275,8 +293,11 @@ def fetch_bom_data(station_id, product_code):
     except Exception:
         return None, None
 
+# --- Main Execution ---
+
 if __name__ == '__main__':
     if not STATION_CONFIG:
+        print("Error: No stations configured.")
         sys.exit(1)
 
     aprs_client = APRSClient(APRS_CALL, APRS_PASSCODE, host=APRS_SERVER, port=APRS_PORT)
@@ -299,8 +320,7 @@ if __name__ == '__main__':
 
             if not aprs_str:
                 continue
-
-            # Only print the final success message
+            
             print(f"Sent packet for {station_name} ({station_id}) via {wx_call}")
             
             try:

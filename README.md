@@ -1,21 +1,96 @@
 # BOM2CWOP
-Australian Bureau of Meteorology Observations to APRS CWOP Uploader 
- This is intended to be run as a regular (10 to 20 minute) cron job. 
-       This Python script will only work in Austraila using the Australian Bureau of Meteorology data  
-       Update the TAR_PATH, APRS_CALL, APRS_PASSCODE (00000 for CWOP) 
-       and Station filename in the (STATION_JSON) Fields before using. 
-       Put the name of the TGZ file from the list below of the state 
-       you want in the TAR_PATH in the Settings for FTP download   
-           
-       /anon/gen/fwo/IDN60910.tgz	New South Wales and Australian Capital Territory 
-       /anon/gen/fwo/IDV60910.tgz	Victoria 
-       /anon/gen/fwo/IDQ60910.tgz	Queensland 
-       /anon/gen/fwo/IDS60910.tgz	South Australia 
-       /anon/gen/fwo/IDW60910.tgz   Western Australia 
-       /anon/gen/fwo/IDT60910.tgz	Tasmania 
-       /anon/gen/fwo/IDD60910.tgz	Northern Territory 
 
-       Download manualy the state you are interested in and open the gzfile 
-       and find the name of file in json format of area you are interested in 
-       and put the .json file name in the STATION_JSON= in the Settings.
-         
+Australian Bureau of Meteorology Observations to APRS CWOP Uploader
+
+This Python script fetches real-time weather observations directly from the Australian Bureau of Meteorology (BOM) HTTP API and uploads them to the APRS (Automatic Packet Reporting System) via the CWOP (Clear Weather Observation Protocol) network.
+
+## Overview
+
+BOM2CWOP is designed to run as a periodic cron job (recommended every 10–20 minutes). It automatically queries the BOM API for the latest JSON observation data for your selected station and pushes the data to the global CWOP network.
+
+> **Note:** This script works **only** in Australia using official BOM data.
+
+## Requirements
+
+- Python 3.x
+- The `requests` library (if not using standard `urllib`)
+- Access to the internet
+- A valid APRS callsign and password (or use `00000` for generic CWOP password)
+
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/vk5trm/BOM2CWOP.git
+   cd BOM2CWOP
+   ```
+
+2. **Important:** Ensure you pull the latest commit (`e695573`) to use the new HTTP API logic.
+   ```bash
+   git pull origin main
+   ```
+
+## Configuration
+
+Update the following variables in `BOM2CWOP.py`:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `APRS_CALL` | Your APRS callsign | `VK1ABC` |
+| `APRS_PASSCODE` | Your APRS passcode (use `00000` for generic CWOP) | `00000` |
+| `STATION_ID` | The BOM Observation Station ID (e.g., `002043`) | `002043` |
+| `STATE_CODE` | Your state code (e.g., `NSW`, `VIC`, `QLD`) | `NSW` |
+
+> **How to find your Station ID:**
+> 1. Visit the BOM Weather Data website.
+> 2. Search for your local weather station.
+> 3. Note the numeric ID (usually 5 digits) in the URL between the two dots (ie https://www.bom.gov.au/fwo/IDS60910/IDS60910.***95687***.json) or station details.
+> 4. Enter this ID in the `STATION_ID` field.
+
+### Supported States
+
+The script automatically constructs the correct API URL based on your state:
+- **NSW** (New South Wales & ACT)
+- **VIC** (Victoria)
+- **QLD** (Queensland)
+- **SA** (South Australia)
+- **WA** (Western Australia)
+- **TAS** (Tasmania)
+- **NT** (Northern Territory)
+
+## Usage
+
+Run the script manually for testing:
+```bash
+python BOM2CWOP.py
+```
+
+### Automate with Cron
+
+To run automatically every 15 minutes, add this to your crontab (`crontab -e`):
+
+```bash
+*/15 * * * * /usr/bin/python3 /path/to/BOM2CWOP/BOM2CWOP.py >> /var/log/bom2cwop.log 2>&1
+```
+
+## Changes in Latest Version (v1.1)
+
+- **Removed FTP dependency:** No more manual downloading of `.tgz` or `.gz` files.
+- **Direct API Access:** Fetches JSON data directly via HTTP.
+- **403 Error Fix:** Resolved authentication/access issues with the BOM server.
+- **Simplified Config:** Replaced `TAR_PATH` and complex file extraction logic with a simple `STATION_ID`.
+
+## Troubleshooting
+
+- **403 Forbidden Error:** Ensure you have updated to the latest version (`e695573`). The previous version had an API version mismatch.
+- **Station Not Found:** Verify your `STATION_ID` is correct. You can find valid IDs on the [BOM Weather Data](http://www.bom.gov.au) site.
+- **No Data Uploaded:** Check your `APRS_CALL` and `APRS_PASSCODE`.
+
+## License
+
+This project is open source.
+
+## Credits
+
+Created by Robert Middelmann **vk5trm** & Mark Jessop **VK5QI**
+```
