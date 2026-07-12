@@ -38,8 +38,8 @@ Update the following variables in `BOM2CWOP.py`:
 |----------|-------------|---------|
 | `APRS_CALL` | Your APRS callsign | `VK1ABC` |
 | `APRS_PASSCODE` | Your APRS passcode (use `00000` for generic CWOP) | `00000` |
-| `STATION_ID` | The BOM Observation Station ID (e.g., `002043`) | `002043` |
-| `STATE_CODE` | Your state code (e.g., `NSW`, `VIC`, `QLD`) | `NSW` |
+| `STATION_ID` | The BOM Observation Station ID (e.g., `IDS60910.95687`) | `"IDS60910.95687": "VK5TRM-13"` |
+
 
 > **How to find your Station ID:**
 > 1. Visit the BOM Weather Data website.
