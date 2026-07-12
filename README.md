@@ -43,9 +43,11 @@ Update the following variables in `BOM2CWOP.py`:
 
 > **How to find your Station ID:**
 > 1. Visit the BOM Weather Data website.
-> 2. Search for your local weather station.
-> 3. Note the numeric ID (usually 5 digits) in the URL between the two dots (ie https://www.bom.gov.au/fwo/IDS60910/IDS60910.***95687***.json) or station details.
-> 4. Enter this ID in the `STATION_ID` field.
+> 2. Search for your local weather station by clicking on you state then click on "Latest Observations"
+> 3. Go though the list and find the town/city you are interested in and click on the name.
+> 4. Note the numeric ID (usually 5 digits) in the URL between the two dots
+     (ie https://www.bom.gov.au/fwo/IDS60910/IDS60910.95687.json) would be STATION_ID=95687
+> 5. Enter this ID in the `STATION_ID` field.
 
 ### Supported States
 
