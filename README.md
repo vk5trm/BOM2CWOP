@@ -2,7 +2,7 @@
 
 Australian Bureau of Meteorology Observations to APRS CWOP Uploader
 
-This Python script fetches real-time weather observations directly from the Australian Bureau of Meteorology (BOM) HTTP API and uploads them to the APRS (Automatic Packet Reporting System) via the CWOP (Clear Weather Observation Protocol) network.
+This Python script fetches real-time weather observations directly from the Australian Bureau of Meteorology (BOM) HTTP API and uploads them to the APRS (Automatic Packet Reporting System) via the CWOP (Citizen Weather Observer Program) network.
 
 ## Overview
 
@@ -94,5 +94,5 @@ This project is open source.
 
 ## Credits
 
-Created by Robert Middelmann **vk5trm** & Mark Jessop **VK5QI**
+Created by Robert Middelmann **VK5TRM** & Mark Jessop **VK5QI**
 ```
