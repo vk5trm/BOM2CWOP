@@ -4,6 +4,8 @@
 #  Robert Middelmann <vk5trm@gmail.com>
 #  Mark Jessop <vk5qi@rfhead.net>
 #  2025-10-19
+#  Rob VK5TRM 2026-07-12 -Fixed HTTP API Version - Fixed for 403)
+#  Modified to include Browser-like headers to bypass BOM WAF
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,31 +22,62 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 #
+#
 import json
 import sys
 import traceback
-import ftplib
-import tarfile
-import io
 import time
-import os
 from socket import *
+import requests
 
-# SETTINGS
-FTP_SERVER = "ftp.bom.gov.au"
-TAR_PATH = "/anon/gen/fwo/IDS60910.tgz"
+# --- SETTINGS ---
 
-# STATION_JSON mapping: json filename (as in archive or basename) -> APRS wx_call
-STATION_JSON = {
-    "IDS60910.94682.json": "VK5TRM-13",
-    "IDS60910.95687.json": "VK5TRM-15",
+# BOM API Configuration
+# The public JSON endpoint structure.
+# Format: http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json
+# Note: BOM blocks requests without a proper User-Agent.
+BOM_BASE_URL = "http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json"
+
+# Station Configuration: Station ID -> APRS Call
+# You must match the Product Code to the State/Region of the station.
+#  IDN60910:	New South Wales and Australian Capital Territory 
+#  IDV60910:	Victoria 
+#  IDQ60910:	Queensland 
+#  IDS60910:	South Australia 
+#  IDW60910:    Western Australia 
+#  IDT60910:	Tasmania 
+#  IDD60910:	Northern Territory 
+#
+BOM_PRODUCT_CODE = "IDS60910"
+#
+#
+STATION_CONFIG = {
+    "94682": "VK5TRM-12",  # Example: A SA station
+    "95687": "VK5TRM-15",  # Example: Another SA station
 }
-
-APRS_CALL = 'VK5TRM-13'    # login user for APRS-IS session (fallback)
-APRS_PASSCODE = 00000
+# APRS Configuration
+APRS_CALL = 'VK5TRM-13'    
+APRS_PASSCODE = 00000      # ⚠️ WARNING: Replace with your real passcode (calculated via APRS passcode calculator)
 APRS_SERVER = 'cwop.aprs.net'
 APRS_PORT = 14580
 
+#!/usr/bin/env python3
+
+#
+#  BOM JSON Observation to APRS Uploader (Clean Version - SA)
+#  Product Code: IDS60910 (South Australia)
+#
+#
+#
+# HTTP Headers to mimic a browser (Required to bypass 403)
+HTTP_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Referer': 'http://www.bom.gov.au/',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1'
+}
 
 class APRSClient:
     def __init__(self, user, passwd, host=APRS_SERVER, port=APRS_PORT, timeout=10):
@@ -60,14 +93,20 @@ class APRSClient:
             return
         s = socket(AF_INET, SOCK_STREAM)
         s.settimeout(self.timeout)
-        s.connect((self.host, self.port))
-        s.send(('user %s pass %s vers BOMWX 0.1\n' % (self.user, self.passwd)).encode())
-        self.sock = s
+        try:
+            s.connect((self.host, self.port))
+            login_msg = f'user {self.user} pass {self.passwd} vers BOMWX_HTTP 0.1\n'
+            s.send(login_msg.encode())
+            self.sock = s
+        except Exception as e:
+            print(f"Failed to connect to APRS-IS: {e}")
+            raise
 
     def send_packet(self, wx_call, data):
         if self.sock is None:
             self.connect()
-        self.sock.send(('%s>APRS:%s\n' % (wx_call, data)).encode())
+        packet = f'{wx_call}>APRS:{data}\n'
+        self.sock.send(packet.encode())
 
     def close(self):
         if self.sock:
@@ -81,16 +120,19 @@ class APRSClient:
                 pass
             self.sock = None
 
-
 def str_or_dots(number, length):
     if number is None:
         return '.' * length
-    else:
-        format_type = {'int': 'd', 'float': '.0f'}[type(number).__name__]
-        return ''.join(('%0', str(length), format_type)) % number
+    try:
+        if isinstance(number, float):
+            return f'%0{length}.0f' % int(number)
+        else:
+            return f'%0{length}d' % int(number)
+    except:
+        return '.' * length
 
-
-def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=None, wind_gust=None, temperature=None, rain_since_midnight=None, humidity=None, pressure=None):
+def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=None, wind_gust=None, 
+                 temperature=None, rain_since_midnight=None, humidity=None, pressure=None):
     return '!%s/%s_%s/%sg%st%sP%sh%sb%s%s' % (
         lat_str, lon_str,
         str_or_dots(wind_dir, 3),
@@ -103,16 +145,16 @@ def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=No
         comment
     )
 
-
 cardinal_lookup = {
     'N': 0, 'NNE': 22, 'NE': 45, 'ENE': 67, 'E': 90, 'ESE': 112, 'SE': 135, 'SSE': 157,
     'S': 180, 'SSW': 202, 'SW': 225, 'WSW': 247, 'W': 270, 'WNW': 292, 'NW': 315, 'NNW': 337, 'CALM': 0
 }
 
-
 def bom_json_to_aprs(obs, comment="BOMWX"):
     if obs is None:
         return None
+    
+    # Coordinates
     try:
         lat = float(obs.get("lat", 0.0))
         lat_degree = abs(int(lat))
@@ -122,6 +164,7 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
         lat_str = "%02d%s" % (lat_degree, lat_min_str) + lat_dir
     except Exception:
         return None
+
     try:
         lon = float(obs.get("lon", 0.0))
         lon_degree = abs(int(lon))
@@ -131,30 +174,49 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
         lon_str = "%03d%s" % (lon_degree, lon_min_str) + lon_dir
     except Exception:
         return None
+
+    # Weather Data
     try:
         temp_f = float(obs.get('air_temp')) * (9.0 / 5.0) + 32
     except Exception:
         temp_f = None
+
     try:
         press_hpa = int(float(obs.get('press')) * 10)
     except Exception:
         press_hpa = None
+
     try:
-        rain_in = float(obs.get('rain_trace')) * 3.93700787
+        rain_mm = float(obs.get('rain_trace'))
+        rain_in = rain_mm * 0.0393700787
     except Exception:
         rain_in = None
+
     try:
         humidity = float(obs.get('rel_hum'))
     except Exception:
         humidity = None
+
     try:
-        wind_speed = float(obs.get('wind_spd_kt')) * 1.15077945
+        spd_val = obs.get('wind_spd_kt')
+        if spd_val is None:
+            spd_val = obs.get('wind_spd_kmh') / 1.852
+        if spd_val is None:
+            spd_val = obs.get('wind_spd_ms') * 1.94384
+        wind_speed = float(spd_val)
     except Exception:
         wind_speed = None
+
     try:
-        wind_gust = float(obs.get('gust_kt')) * 1.15077945
+        gust_val = obs.get('gust_kt')
+        if gust_val is None:
+            gust_val = obs.get('gust_kmh') / 1.852
+        if gust_val is None:
+            gust_val = obs.get('gust_ms') * 1.94384
+        wind_gust = float(gust_val)
     except Exception:
         wind_gust = None
+
     wind_dir_value = obs.get('wind_dir')
     if wind_dir_value in cardinal_lookup:
         wind_dir = cardinal_lookup[wind_dir_value]
@@ -176,147 +238,84 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
         wind_dir=wind_dir
     )
 
-
-def _normalize_station_json_param(station_json):
-    # expected to be a dict mapping filename->wx_call
-    if station_json is None:
-        return [], {}
-    if isinstance(station_json, dict):
-        wanted = [k for k in station_json.keys() if k and str(k).strip()]
-        mapping = {k: v for k, v in station_json.items() if k and str(k).strip()}
-        return wanted, mapping
-    if isinstance(station_json, str):
-        s = station_json.strip()
-        if s == '' or s == '*':
-            return [], {}
-        parts = [p.strip() for p in s.split(',') if p.strip()]
-        mapping = {p: APRS_CALL for p in parts}
-        return parts, mapping
-    return [], {}
-
-
-def get_bom_jsons(ftp_server, tar_path, wanted_list):
-    if not wanted_list:
-        print("ERROR: No STATION_JSON filenames provided")
-        return []
+def fetch_bom_data(station_id, product_code):
+    """Fetches JSON data from BOM HTTP API"""
+    url = BOM_BASE_URL.format(product_code=product_code, station_id=station_id)
+    
     try:
-        ftp = ftplib.FTP(ftp_server)
-        ftp.login()
-        tar_bytes = io.BytesIO()
-        ftp.retrbinary("RETR %s" % tar_path, tar_bytes.write)
-        ftp.quit()
-        tar_bytes.seek(0)
-        result = []
-        with tarfile.open(fileobj=tar_bytes, mode='r:gz') as tar:
-            names = tar.getnames()
-            # print("DEBUG: requested/wanted list:", wanted_list)
-            candidates = [n for n in names if n in wanted_list or os.path.basename(n) in wanted_list]
-            # print("DEBUG: matched candidates:", candidates)
-            if not candidates:
-                print("No matching JSON files found in archive for the requested filenames.")
-                return []
-            for cand in candidates:
-                try:
-                    extracted = tar.extractfile(cand)
-                    if not extracted:
-                        print(f"Could not extract {cand} from archive")
-                        continue
-                    json_data = extracted.read().decode()
-                    parsed_data = json.loads(json_data)
-                    observations_list = parsed_data.get('observations', {}).get('data', [])
-                    # Debug: show structure keys to help identify where name is
-                    try:
-                        obs_keys = parsed_data.get('observations', {}).keys()
-                    except Exception:
-                        obs_keys = None
-                    # print(f"DEBUG: {cand} observations keys: {obs_keys}; top-level keys: {list(parsed_data.keys())}")
-                    # determine station name robustly by trying multiple likely locations
-                    station_name = None
-                    header = parsed_data.get('observations', {}).get('header')
-                    # header can be dict or list
-                    if isinstance(header, dict):
-                        station_name = header.get('name') or header.get('station_name') or station_name
-                    elif isinstance(header, list):
-                        for h in header:
-                            if isinstance(h, dict):
-                                station_name = h.get('name') or h.get('station_name') or station_name
-                                if station_name:
-                                    break
-                    # try top-level name
-                    if not station_name:
-                        station_name = parsed_data.get('name')
-                    # try first observation entry's name fields
-                    if not station_name and observations_list:
-                        first_obs = observations_list[0] if isinstance(observations_list, list) and observations_list else None
-                        if isinstance(first_obs, dict):
-                            station_name = first_obs.get('name') or first_obs.get('station_name') or first_obs.get('station') or station_name
-                    # final fallback to filename basename
-                    if not station_name:
-                        station_name = os.path.basename(cand)
-                    if observations_list:
-                        result.append((cand, observations_list, station_name))
-                    else:
-                        print(f"No observations found in {cand}")
-                except Exception:
-                    print(f"ERROR: Could not parse {cand}: " + traceback.format_exc())
-                    continue
-        return result
+        session = requests.Session()
+        session.headers.update(HTTP_HEADERS)
+        response = session.get(url, timeout=10)
+        
+        if response.status_code != 200:
+            return None, None
+        
+        data = response.json()
+        
+        # Find observations list
+        observations_list = []
+        if 'observations' in data:
+            if isinstance(data['observations'], dict) and 'data' in data['observations']:
+                observations_list = data['observations']['data']
+            elif isinstance(data['observations'], list):
+                observations_list = data['observations']
+        
+        if not observations_list and 'data' in data:
+            if isinstance(data['data'], list):
+                observations_list = data['data']
+        
+        if not observations_list:
+            return None, None
+
+        latest_obs = observations_list[0]
+        station_name = latest_obs.get('name') or latest_obs.get('station_name') or f"Station {station_id}"
+        
+        return latest_obs, station_name
+
     except Exception:
-        print("ERROR: Grabbing data from BOM FTP failed: " + traceback.format_exc())
-        return []
-
-
-def determine_aprs_call_for_file(station_filename, mapping):
-    if not mapping:
-        return APRS_CALL
-    if station_filename in mapping:
-        return mapping[station_filename] or APRS_CALL
-    base = os.path.basename(station_filename)
-    if base in mapping:
-        return mapping[base] or APRS_CALL
-    return APRS_CALL
-
+        return None, None
 
 if __name__ == '__main__':
-    wanted, aprs_mapping = _normalize_station_json_param(STATION_JSON)
-    if not wanted:
-        print("ERROR: STATION_JSON must be mapping or comma-separated filenames. Exiting.")
-        sys.exit(1)
-
-    station_obs_list = get_bom_jsons(FTP_SERVER, TAR_PATH, wanted)
-    if not station_obs_list:
-        print("No observations to process. Exiting.")
+    if not STATION_CONFIG:
         sys.exit(1)
 
     aprs_client = APRSClient(APRS_CALL, APRS_PASSCODE, host=APRS_SERVER, port=APRS_PORT)
+    
     try:
         aprs_client.connect()
     except Exception:
-        print("ERROR: Could not connect/login to APRS-IS: " + traceback.format_exc())
-        aprs_client.close()
         sys.exit(1)
 
     try:
         sent_count = 0
-        for station_filename, observations, station_name in station_obs_list:
+        for station_id, wx_call in STATION_CONFIG.items():
+            obs, station_name = fetch_bom_data(station_id, BOM_PRODUCT_CODE)
+            
+            if obs is None:
+                continue
+
+            comment = ("%s WX" % station_name) or ("BOMWX %s" % station_id)
+            aprs_str = bom_json_to_aprs(obs, comment=comment)
+
+            if not aprs_str:
+                continue
+
+            # Only print the final success message
+            print(f"Sent packet for {station_name} ({station_id}) via {wx_call}")
+            
             try:
-                obs = observations[0]
-                # Use the station "name" field from the JSON (station_name), fallback to filename if not present.
-                comment = ("%s WX" % station_name) or ("BOMWX %s" % station_filename)
-                aprs_str = bom_json_to_aprs(obs, comment=comment)
-                if not aprs_str:
-                    print("Skipping invalid observation for %s" % station_filename)
-                    continue
-                wx_call = determine_aprs_call_for_file(station_filename, aprs_mapping)
-                print("Using APRS call '%s' for station file %s" % (wx_call, station_filename))
-                print("CWOP String: %s" % aprs_str)
                 aprs_client.send_packet(wx_call, aprs_str)
                 sent_count += 1
-                print("Sent packet #%d for %s" % (sent_count, station_filename))
                 time.sleep(0.5)
             except Exception:
-                print("ERROR processing observation for %s: " % (station_filename) + traceback.format_exc())
+                pass
+
     finally:
         aprs_client.close()
-    print("Finished. Total packets sent:", sent_count)
+
+    if sent_count > 0:
+        print(f"Finished. Total packets sent: {sent_count}")
+    else:
+        print("No packets sent.")
+    
     sys.exit(0)
