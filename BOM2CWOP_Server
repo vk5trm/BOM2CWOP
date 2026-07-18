@@ -1,0 +1,607 @@
+#!/usr/bin/env python3
+
+"""
+BOM JSON Observation to APRS Uploader - Web Server with Station Menu
+Author: Robert Middelmann (vk5trm) & Mark Jessop (vk5qi)
+Version: 1.5-Final
+Date: 2026-07-18
+"""
+
+import json
+import sys
+import time
+import threading
+import math
+from socket import *
+import requests
+from flask import Flask, jsonify, render_template_string, Response, request
+
+# --- USER CONFIGURATION ---
+# Format: "ProductCode.StationID": { "aprs_call": "CALLSIGN", "name": "Friendly Name" }
+# The 'aprs_call' here is for display/menu reference, but the UPLOAD uses the global APRS_CALL
+STATION_CONFIG = {
+    "IDS60910.94682": {
+        "aprs_call": "VK5TRM-12",
+        "name": "YLOX"
+    },
+    "IDS60910.95687": {
+        "aprs_call": "VK5TRM-15",
+        "name": "YREN"
+    }
+}
+
+# Global APRS Config (Used for Login)
+APRS_CALL = 'VK5TRM-13'    
+APRS_PASSCODE = '00000'  # ⚠️ Replace with your real passcode
+APRS_SERVER = 'cwop.aprs.net'
+APRS_PORT = 14580
+
+# Scheduler settings
+SCHEDULE_INTERVAL_MINUTES = 15
+SCHEDULE_INTERVAL_SECONDS = SCHEDULE_INTERVAL_MINUTES * 60
+
+# --- SYSTEM CONFIGURATION ---
+BOM_BASE_URL = "http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json"
+
+HTTP_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Referer': 'http://www.bom.gov.au/',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1'
+}
+
+# --- APRS Logic ---
+
+class APRSClient:
+    def __init__(self, user, passwd, host=APRS_SERVER, port=APRS_PORT, timeout=10):
+        self.user = user
+        self.passwd = passwd
+        self.host = host
+        self.port = port
+        self.sock = None
+        self.timeout = timeout
+
+    def connect(self):
+        if self.sock:
+            return
+        s = socket(AF_INET, SOCK_STREAM)
+        s.settimeout(self.timeout)
+        try:
+            s.connect((self.host, self.port))
+            login_msg = f'user {self.user} pass {self.passwd} vers BOMWX_HTTP 0.1\n'
+            s.send(login_msg.encode())
+            self.sock = s
+            print(f"[APRS] Connected to {self.host}:{self.port} as {self.user}")
+        except Exception as e:
+            print(f"[APRS] Failed to connect: {e}")
+            raise e
+
+    def send_packet(self, wx_call, data):
+        if self.sock is None:
+            self.connect()
+        packet = f'{wx_call}>APRS:{data}\n'
+        self.sock.send(packet.encode())
+
+    def close(self):
+        if self.sock:
+            try:
+                self.sock.shutdown(0)
+            except:
+                pass
+            try:
+                self.sock.close()
+            except:
+                pass
+            self.sock = None
+
+def str_or_dots(number, length):
+    if number is None:
+        return '.' * length
+    try:
+        if isinstance(number, float):
+            return f'%0{length}.0f' % int(number)
+        else:
+            return f'%0{length}d' % int(number)
+    except:
+        return '.' * length
+
+def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=None, wind_gust=None,
+                 temperature=None, rain_since_midnight=None, humidity=None, pressure=None):
+    return '!%s/%s_%s/%sg%st%sP%sh%sb%s%s' % (
+        lat_str, lon_str,
+        str_or_dots(wind_dir, 3),
+        str_or_dots(wind_speed, 3),
+        str_or_dots(wind_gust, 3),
+        str_or_dots(temperature, 3),
+        str_or_dots(rain_since_midnight, 3),
+        str_or_dots(humidity, 2),
+        str_or_dots(pressure, 5),
+        comment
+    )
+
+cardinal_lookup = {
+    'N': 0, 'NNE': 22, 'NE': 45, 'ENE': 67, 'E': 90, 'ESE': 112, 'SE': 135, 'SSE': 157,
+    'S': 180, 'SSW': 202, 'SW': 225, 'WSW': 247, 'W': 270, 'WNW': 292, 'NW': 315, 'NNW': 337, 'CALM': 0
+}
+
+def bom_json_to_aprs(obs, comment="BOMWX"):
+    if obs is None:
+        return None
+
+    try:
+        lat = float(obs.get("lat", 0.0))
+        lat_degree = abs(int(lat))
+        lat_minute = abs(lat - int(lat)) * 60.0
+        lat_min_str = ("%02.2f" % lat_minute).zfill(5)
+        lat_dir = "N" if lat > 0 else "S"
+        lat_str = "%02d%s" % (lat_degree, lat_min_str) + lat_dir
+    except:
+        return None
+
+    try:
+        lon = float(obs.get("lon", 0.0))
+        lon_degree = abs(int(lon))
+        lon_minute = abs(lon - int(lon)) * 60.0
+        lon_min_str = ("%02.2f" % lon_minute).zfill(5)
+        lon_dir = "W" if lon < 0 else "E"
+        lon_str = "%03d%s" % (lon_degree, lon_min_str) + lon_dir
+    except:
+        return None
+
+    try:
+        temp_f = float(obs.get('air_temp')) * (9.0 / 5.0) + 32
+    except:
+        temp_f = None
+    try:
+        press_hpa = int(float(obs.get('press')) * 10)
+    except:
+        press_hpa = None
+    try:
+        rain_mm = float(obs.get('rain_trace'))
+        rain_in = rain_mm * 0.0393700787
+    except:
+        rain_in = None
+    try:
+        humidity = float(obs.get('rel_hum'))
+    except:
+        humidity = None
+
+    try:
+        spd_val = obs.get('wind_spd_kt') or (obs.get('wind_spd_kmh') / 1.852) or (obs.get('wind_spd_ms') * 1.94384)
+        wind_speed = float(spd_val)
+    except:
+        wind_speed = None
+
+    try:
+        gust_val = obs.get('gust_kt') or (obs.get('gust_kmh') / 1.852) or (obs.get('gust_ms') * 1.94384)
+        wind_gust = float(gust_val)
+    except:
+        wind_gust = None
+
+    wind_dir_value = obs.get('wind_dir')
+    if wind_dir_value in cardinal_lookup:
+        wind_dir = cardinal_lookup[wind_dir_value]
+    else:
+        try:
+            wind_dir = int(float(wind_dir_value))
+        except:
+            wind_dir = None
+
+    return make_aprs_wx(lat_str, lon_str, comment=comment, temperature=temp_f, pressure=press_hpa,
+                        rain_since_midnight=rain_in, humidity=humidity, wind_speed=wind_speed,
+                        wind_gust=wind_gust, wind_dir=wind_dir)
+
+def fetch_bom_data(station_id, product_code):
+    url = BOM_BASE_URL.format(product_code=product_code, station_id=station_id)
+    try:
+        session = requests.Session()
+        session.headers.update(HTTP_HEADERS)
+        response = session.get(url, timeout=10)
+        if response.status_code != 200:
+            return None, None
+        data = response.json()
+
+        observations_list = []
+        if 'observations' in data:
+            if isinstance(data['observations'], dict) and 'data' in data['observations']:
+                observations_list = data['observations']['data']
+            elif isinstance(data['observations'], list):
+                observations_list = data['observations']
+        if not observations_list and 'data' in data:
+            if isinstance(data['data'], list):
+                observations_list = data['data']
+
+        if not observations_list:
+            return None, None
+
+        latest_obs = observations_list[0]
+        station_name = latest_obs.get('name') or latest_obs.get('station_name') or f"Station {station_id}"
+        return latest_obs, station_name
+    except Exception as e:
+        print(f"[Fetch] Error for {station_id}: {e}")
+        return None, None
+
+def upload_to_aprs():
+    """Runs in background thread to upload data every 15 minutes using Global APRS_CALL for login"""
+    print(f"[Scheduler] Starting automatic upload loop (every {SCHEDULE_INTERVAL_MINUTES} mins)")
+    
+    while True:
+        try:
+            print(f"[Scheduler] Fetching data at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            aprs_client = APRSClient(APRS_CALL, APRS_PASSCODE, host=APRS_SERVER, port=APRS_PORT)
+            sent_count = 0
+            
+            try:
+                aprs_client.connect()
+                
+                for full_id, config in STATION_CONFIG.items():
+                    parts = full_id.split('.')
+                    station_product_code = parts[0]
+                    station_id = parts[-1]
+                    
+                    # Get name and call for display/log
+                    station_name = config.get('name', f"Station {station_id}")
+                    wx_call = config.get('aprs_call', APRS_CALL)
+                    
+                    obs, _ = fetch_bom_data(station_id, station_product_code)
+                    
+                    if obs is None:
+                        print(f"[Scheduler] Failed to fetch data for {station_name}")
+                        continue
+                    
+                    comment = ("%s WX" % station_name) or ("BOMWX %s" % station_id)
+                    aprs_str = bom_json_to_aprs(obs, comment=comment)
+                    
+                    if not aprs_str:
+                        print(f"[Scheduler] Failed to format APRS for {station_name}")
+                        continue
+                    
+                    # Send packet using the station's specific call sign
+                    # (The connection is logged in as global APRS_CALL)
+                    print(f"[Scheduler] Sending packet for {wx_call} ({station_name})")
+                    aprs_client.send_packet(wx_call, aprs_str)
+                    sent_count += 1
+                    time.sleep(0.5) 
+                
+                print(f"[Scheduler] Upload complete. Packets sent: {sent_count}")
+                
+            finally:
+                aprs_client.close()
+        
+        except Exception as e:
+            print(f"[Scheduler] Critical error in loop: {e}")
+        
+        time.sleep(SCHEDULE_INTERVAL_SECONDS)
+
+# --- Flask App ---
+app = Flask(__name__)
+
+# --- Generate Home Page HTML dynamically based on STATION_CONFIG ---
+HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BOM to APRS Web Server</title>
+    <meta name="description" content="Fetches weather data from BOM and uploads to APRS-IS automatically every 15 mins">
+    <meta name="author" content="Robert Middelmann & Mark Jessop">
+    <meta name="version" content="1.5-Final">
+    <meta name="date" content="2026-07-18">
+    <style>
+        body { font-family: sans-serif; margin: 40px; line-height: 1.6; }
+        h1 { color: #333; }
+        .status { padding: 10px; background: #e8f5e9; border-left: 5px solid #4caf50; margin-top: 20px; }
+        a { color: #1976d2; text-decoration: none; font-weight: bold; }
+        a:hover { text-decoration: underline; }
+        .station-list { margin-top: 20px; }
+        .station-item { background: #f9f9f9; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 4px solid #1976d2; }
+        .station-name { font-size: 1.1em; }
+    </style>
+</head>
+<body>
+    <h1>BOM to APRS Web Server</h1>
+    <p><strong>Status:</strong> <span class="status">Running with automatic 15-minute uploads</span></p>
+    <p><strong>Description:</strong> Fetches weather data from the Australian Bureau of Meteorology (BOM) and uploads it to the APRS-IS network automatically.</p>
+    <p><strong>Authors:</strong> Robert Middelmann (vk5trm), Mark Jessop (vk5qi)</p>
+    <p><strong>Version:</strong> 1.5 (Config Name Menu)</p>
+    
+    <h3>Select a Station:</h3>
+    <div class="station-list">
+    """
+
+# Dynamically build the list using names from STATION_CONFIG
+for full_id, config in STATION_CONFIG.items():
+    display_name = config.get('name', f"Station {full_id.split('.')[-1]}")
+    # Use the name in the URL parameter for filtering
+    HTML_PAGE += f"""
+    <div class="station-item">
+        <span class="station-name">{display_name}</span><br>
+        <a href="/weather?station={display_name}">View METAR Data for {display_name}</a>
+    </div>
+    """
+
+HTML_PAGE += """
+    </div>
+
+    <h3>Other Endpoints:</h3>
+    <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/weather">All Stations (Default)</a></li>
+        <li><a href="/aprs">Trigger Manual APRS Upload</a></li>
+    </ul>
+</body>
+</html>
+"""
+
+@app.route('/')
+def home():
+    return render_template_string(HTML_PAGE)
+
+@app.route('/weather')
+def weather():
+    """Returns Standard METAR text metadata (e.g., LFPG 101230Z 22015...)"""
+    output_lines = []
+    
+    A = 17.27
+    B = 237.7
+    station_filter = request.args.get('station', '').strip().lower()
+
+    # Get current UTC time for the METAR timestamp
+    now = time.strftime("%d%H%MZ", time.gmtime())
+
+    for full_id, config in STATION_CONFIG.items():
+        parts = full_id.split('.')
+        station_product_code = parts[0]
+        station_id = parts[-1]
+        
+        station_name = config.get('name', f"Station {station_id}")
+        
+        # Filter Logic
+        if station_filter:
+            if station_filter not in station_name.lower() and station_filter not in station_id.lower():
+                continue
+
+        obs, _ = fetch_bom_data(station_id, station_product_code)
+        
+        if not obs:
+            if not station_filter or station_name.lower().startswith(station_filter):
+                output_lines.append(f"NO DATA: {station_name} ({station_id})")
+                output_lines.append("=" * 40)
+            continue
+
+        # --- Extract Data ---
+        temp_c = obs.get('air_temp')
+        humidity = obs.get('rel_hum')
+        press_hpa = obs.get('press')
+        vis_km = obs.get('vis_km') or obs.get('vis') or obs.get('visibility')
+        cloud_layers = obs.get('cloud_layers')
+        wind_dir_val = obs.get('wind_dir')
+        wind_spd_kmh = obs.get('wind_spd_kmh') or obs.get('wind')
+        gust_kmh = obs.get('gust_kmh') or obs.get('gust')
+        rain_mm = obs.get('rain_trace') or obs.get('rain')
+
+        # --- Calculate Dew Point ---
+        dew_str = "///"
+        if temp_c is not None and humidity is not None:
+            try:
+                t = float(temp_c)
+                rh = float(humidity)
+                if 0 < rh <= 100:
+                    alpha = (A * t) / (B + t) + math.log(rh / 100.0)
+                    dew_point = (B * alpha) / (A - alpha)
+                    dew_str = f"M{abs(dew_point):.0f}" if dew_point < 0 else f"{dew_point:.0f}"
+            except:
+                pass
+
+        # --- Temperature (2 digits, M for minus) ---
+        temp_str = "///"
+        if temp_c is not None:
+            try:
+                t_val = float(temp_c)
+                if t_val < 0:
+                    # Format: M + 2 digits (e.g., M14 for -14C)
+                    temp_str = f"M{abs(t_val):02.0f}"
+                else:
+                    # Format: 2 digits (e.g., 14 for 14C)
+                    temp_str = f"{t_val:02.0f}"
+            except:
+                pass
+
+        # --- Dew Point ---
+        dew_str = "///"
+        if temp_c is not None and humidity is not None:
+            try:
+                t = float(temp_c)
+                rh = float(humidity)
+                if 0 < rh <= 100:
+                    alpha = (A * t) / (B + t) + math.log(rh / 100.0)
+                    dew_point = (B * alpha) / (A - alpha)
+                    if dew_point < 0:
+                        # Format: M + 2 digits (e.g., M08 for -8C)
+                        dew_str = f"M{abs(dew_point):02.0f}"
+                    else:
+                        # Format: 2 digits (e.g., 08 for 8C)
+                        dew_str = f"{dew_point:02.0f}"
+            except:
+                pass
+
+        # --- Pressure ---
+        qnh_str = f"Q{int(float(press_hpa))}" if press_hpa else "Q////"
+
+        # --- Visibility ---
+        vis_str = "9999"
+        if vis_km:
+            try:
+                vis_val = float(vis_km)
+                vis_str = "9999" if vis_val >= 10 else ("0000" if vis_val < 0.1 else f"{int(vis_val * 1000):04d}")
+            except:
+                pass
+
+        # --- Clouds (Default SKC) ---
+        cloud_str = "SKC"
+        if isinstance(cloud_layers, list) and len(cloud_layers) > 0:
+            metar_clouds = []
+            try:
+                sorted_layers = sorted(cloud_layers, key=lambda k: k.get('base', 99999))
+            except:
+                sorted_layers = cloud_layers
+            
+            for layer in sorted_layers[:3]:
+                amount = layer.get('amount', '').upper()
+                base_ft = layer.get('base', 0)
+                
+                if amount in ['FEW', 'SCT', 'BKN', 'OVC']:
+                    metar_amount = amount
+                elif amount in ['CLEAR', 'SKC']:
+                    metar_amount = "SKC"
+                elif amount == 'OVERCAST':
+                    metar_amount = "OVC"
+                elif amount == 'SCATTERED':
+                    metar_amount = "SCT"
+                elif amount == 'BROKEN':
+                    metar_amount = "BKN"
+                else:
+                    pct = layer.get('coverage', layer.get('percent', 0))
+                    if pct < 5: metar_amount = "SKC"
+                    elif pct < 25: metar_amount = "FEW"
+                    elif pct < 50: metar_amount = "SCT"
+                    elif pct < 90: metar_amount = "BKN"
+                    else: metar_amount = "OVC"
+                
+                base_val = float(base_ft) if base_ft else 0
+                if base_val < 100 and base_val > 0: 
+                    base_ft_final = int(base_val * 3.28084)
+                else:
+                    base_ft_final = int(base_val)
+                
+                if base_ft_final < 100: base_ft_final = 0
+                else: base_ft_final = int(base_ft_final / 100) * 100
+                
+                cloud_entry = f"{metar_amount}{int(base_ft_final/100):03d}" if base_ft_final > 0 else f"{metar_amount}///"
+                metar_clouds.append(cloud_entry)
+            
+            if metar_clouds:
+                cloud_str = " ".join(metar_clouds)
+
+        # --- Wind & Gusts ---
+        # Direction is 3 digits (e.g., 067)
+        wind_deg = "///"
+        if wind_dir_val in cardinal_lookup:
+            wind_deg = f"{cardinal_lookup[wind_dir_val]:03d}"
+        else:
+            try:
+                wind_deg = f"{int(float(wind_dir_val)):03d}"
+            except:
+                pass
+        
+        # Speed and Gust are 2 digits (e.g., 12 or 10)
+        wind_kt = "///"
+        if wind_spd_kmh:
+            try:
+                wind_kt = f"{int(float(wind_spd_kmh) / 1.852):02d}"
+            except:
+                pass
+        
+        gust_kt = None
+        if gust_kmh:
+            try:
+                gust_kt = f"{int(float(gust_kmh) / 1.852):02d}"
+            except:
+                pass
+        
+        wind_str = "///////"
+        if wind_deg != "///" and wind_kt != "///":
+            if gust_kt:
+                wind_str = f"{wind_deg}{wind_kt}G{gust_kt}KT"
+            else:
+                wind_str = f"{wind_deg}{wind_kt}KT"
+        # --- Weather Phenomena ---
+        weather_str = "RA" if rain_mm and float(rain_mm) > 0 else ""
+
+        # --- Station ID ---
+        station_code = station_name.replace(" ", "")[:4].upper() if station_name else f"STN{station_id[-3:]}"
+
+        # --- Construct Standard METAR Line ---
+        # Format: STNID TIME WIND VIS CLOUDS TEMP/DEW QNH [WEATHER] [NOSIG]
+        # Example: LFPG 101230Z 22015G25KT 9999 FEW040 24/15 Q1018 NOSIG
+        
+        nosig = "NOSIG" if not weather_str else "" # Add NOSIG if no rain/storm
+        
+        # Build the string
+        metar_parts = [
+            station_code,
+            now,
+            wind_str,
+            vis_str,
+            cloud_str,
+            f"{temp_str}/{dew_str}",
+            qnh_str
+        ]
+        
+        if weather_str:
+            metar_parts.append(weather_str)
+        if nosig:
+            metar_parts.append(nosig)
+            
+        metar_line = " ".join(metar_parts)
+        
+        # Add raw details
+        dew_info = f"{dew_str}C" if dew_str != "///" else "N/A"
+        gust_info = f"G{gust_kmh}kmh" if gust_kmh else ""
+        cloud_info = cloud_str if cloud_str != "SKC" else "Clear"
+        
+        output_lines.append(metar_line)
+#        output_lines.append(f"  Details: {station_name} | Temp: {temp_c}C | DewPt: {dew_info} | Wind: {wind_spd_kmh}kmh{gust_info}/{wind_deg} | QNH: {press_hpa}hPa | Vis: {vis_km}km | Cloud: {cloud_info} | Rain: {rain_mm}mm")
+#        output_lines.append("-" * 40)
+
+    if not output_lines:
+        output_lines.append("No data found for the specified station.")
+        output_lines.append(f"Try: /weather?station=Adelaide")
+
+    return Response("\n".join(output_lines), mimetype='text/plain; charset=utf-8')
+
+@app.route('/aprs')
+def trigger_aprs():
+    """Manual trigger for testing"""
+    try:
+        aprs_client = APRSClient(APRS_CALL, APRS_PASSCODE, host=APRS_SERVER, port=APRS_PORT)
+        aprs_client.connect()
+        sent_count = 0
+        
+        for full_id, config in STATION_CONFIG.items():
+            parts = full_id.split('.')
+            station_product_code = parts[0]
+            station_id = parts[-1]
+            
+            wx_call = config.get('aprs_call', APRS_CALL)
+            station_name = config.get('name', f"Station {station_id}")
+            
+            obs, _ = fetch_bom_data(station_id, station_product_code)
+            if obs is None:
+                continue
+            
+            comment = ("%s WX" % station_name) or ("BOMWX %s" % station_id)
+            aprs_str = bom_json_to_aprs(obs, comment=comment)
+            if not aprs_str:
+                continue
+            
+            aprs_client.send_packet(wx_call, aprs_str)
+            sent_count += 1
+            time.sleep(0.5)
+            
+        aprs_client.close()
+        return jsonify({"status": "success", "packets_sent": sent_count})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    print("Starting BOM to APRS Web Server...")
+    
+    # Start the scheduler in a background thread
+    scheduler_thread = threading.Thread(target=upload_to_aprs, daemon=True)
+    scheduler_thread.start()
+    
+    # Start the Flask web server
+    print("Web server starting on port 5000...")
+    app.run(host='0.0.0.0', port=5000, debug=False)
