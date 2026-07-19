@@ -33,7 +33,7 @@ STATION_CONFIG = {
 # Global APRS Config (Used for Login)
 APRS_CALL = 'VK5TRM-5'    
 APRS_PASSCODE = '00000'  # ⚠️ Replace with your real passcode
-APRS_SERVER = 'cwop.aprs.net'
+APRS_SERVER = 'aunz.aprs2.net'
 APRS_PORT = 14580
 
 # Scheduler settings
@@ -498,8 +498,10 @@ def weather():
         if metar_amount == "SKC":
             cloud_str = "SKC"
         else:
+            # If base is 0 (ground level/obscured), show 000
+            # If base is >= 100, show 010, 020, etc.
             if base_ft_final == 0:
-                cloud_str = f"{metar_amount}///"
+                cloud_str = f"{metar_amount}000"
             else:
                 cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
 
