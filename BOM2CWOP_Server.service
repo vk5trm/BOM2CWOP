@@ -1,0 +1,15 @@
+[Unit]
+Description=BOM2CWOP APRS upload + MetaData web server
+After=multi-user.target
+
+[Service]
+# ExecStartPre=sleep 30
+ExecStart=python3 /usr/local/bin/BOM2CWOP_Server
+WorkingDirectory= /usr/local/bin/
+StandardOutput=journal
+StandardError=journal
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target

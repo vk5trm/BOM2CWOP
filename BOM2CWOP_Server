@@ -21,17 +21,17 @@ from flask import Flask, jsonify, render_template_string, Response, request
 # The 'aprs_call' here is for display/menu reference, but the UPLOAD uses the global APRS_CALL
 STATION_CONFIG = {
     "IDS60910.94682": {
-        "aprs_call": "VK5TRM-12",
+        "aprs_call": "YLOX",
         "name": "YLOX"
     },
     "IDS60910.95687": {
-        "aprs_call": "VK5TRM-15",
+        "aprs_call": "YREN",
         "name": "YREN"
     }
 }
 
 # Global APRS Config (Used for Login)
-APRS_CALL = 'VK5TRM-13'    
+APRS_CALL = 'VK5TRM-5'    
 APRS_PASSCODE = '00000'  # ⚠️ Replace with your real passcode
 APRS_SERVER = 'cwop.aprs.net'
 APRS_PORT = 14580
@@ -340,15 +340,24 @@ def home():
 
 @app.route('/weather')
 def weather():
-    """Returns Standard METAR text metadata (e.g., LFPG 101230Z 22015...)"""
+    """Returns Standard METAR text metadata with a Date/Time header line"""
     output_lines = []
     
     A = 17.27
     B = 237.7
     station_filter = request.args.get('station', '').strip().lower()
 
-    # Get current UTC time for the METAR timestamp
-    now = time.strftime("%d%H%MZ", time.gmtime())
+    # --- 1. Generate Date/Time Line (YYYY/MM/DD HH:MM) ---
+    # Using local time or UTC depending on preference. 
+    # The code below uses UTC to match standard METAR practices.
+    now = time.gmtime()
+    date_time_str = time.strftime("%Y/%m/%d %H:%M", now)
+    
+    # Add this as the very first line of output
+    output_lines.append(date_time_str)
+
+    # Get current UTC time for the METAR timestamp (internal format)
+    metar_time = time.strftime("%d%H%MZ", now)
 
     for full_id, config in STATION_CONFIG.items():
         parts = full_id.split('.')
@@ -366,66 +375,175 @@ def weather():
         
         if not obs:
             if not station_filter or station_name.lower().startswith(station_filter):
-                output_lines.append(f"NO DATA: {station_name} ({station_id})")
-                output_lines.append("=" * 40)
+                # Optional: You might want to skip adding "NO DATA" lines to keep it clean,
+                # or keep them for debugging.
+                pass 
             continue
 
-        # --- Extract Data ---
+        # --- Extract Data (Robust Version) ---
         temp_c = obs.get('air_temp')
         humidity = obs.get('rel_hum')
         press_hpa = obs.get('press')
         vis_km = obs.get('vis_km') or obs.get('vis') or obs.get('visibility')
-        cloud_layers = obs.get('cloud_layers')
+        
+        # --- Rain Extraction (Safe) ---
+        rain_mm_val = None
+        rain_mm_raw = obs.get('rain_trace') or obs.get('rain')
+        if rain_mm_raw is not None:
+            try:
+                rain_mm_val = float(rain_mm_raw)
+            except:
+                rain_mm_val = None
+        
+        has_rain = rain_mm_val is not None and rain_mm_val > 0
+
+        # --- Wind Extraction ---
         wind_dir_val = obs.get('wind_dir')
         wind_spd_kmh = obs.get('wind_spd_kmh') or obs.get('wind')
         gust_kmh = obs.get('gust_kmh') or obs.get('gust')
-        rain_mm = obs.get('rain_trace') or obs.get('rain')
 
-        # --- Calculate Dew Point ---
-        dew_str = "///"
-        if temp_c is not None and humidity is not None:
+        # --- Cloud Extraction (Handles BOTH flat and list formats) ---
+        cloud_str = "SKC"
+        cloud_layers = obs.get('cloud_layers')
+        cloud_oktas = obs.get('cloud_oktas')
+        cloud_base_m = obs.get('cloud_base_m')
+        cloud_desc = obs.get('cloud', '')
+
+        metar_amount = "SKC"
+        base_ft_final = 0
+
+        # Priority 1: Use cloud_layers if it's a list (Standard BOM format)
+        if isinstance(cloud_layers, list) and len(cloud_layers) > 0:
+            # Sort by base
             try:
-                t = float(temp_c)
-                rh = float(humidity)
-                if 0 < rh <= 100:
-                    alpha = (A * t) / (B + t) + math.log(rh / 100.0)
-                    dew_point = (B * alpha) / (A - alpha)
-                    dew_str = f"M{abs(dew_point):.0f}" if dew_point < 0 else f"{dew_point:.0f}"
+                sorted_layers = sorted(cloud_layers, key=lambda k: k.get('base', 99999))
             except:
-                pass
-
-        # --- Temperature (2 digits, M for minus) ---
-        temp_str = "///"
-        if temp_c is not None:
-            try:
-                t_val = float(temp_c)
-                if t_val < 0:
-                    # Format: M + 2 digits (e.g., M14 for -14C)
-                    temp_str = f"M{abs(t_val):02.0f}"
-                else:
-                    # Format: 2 digits (e.g., 14 for 14C)
-                    temp_str = f"{t_val:02.0f}"
-            except:
-                pass
-
-        # --- Dew Point ---
-        dew_str = "///"
-        if temp_c is not None and humidity is not None:
-            try:
-                t = float(temp_c)
-                rh = float(humidity)
-                if 0 < rh <= 100:
-                    alpha = (A * t) / (B + t) + math.log(rh / 100.0)
-                    dew_point = (B * alpha) / (A - alpha)
-                    if dew_point < 0:
-                        # Format: M + 2 digits (e.g., M08 for -8C)
-                        dew_str = f"M{abs(dew_point):02.0f}"
+                sorted_layers = cloud_layers
+            
+            # Take the lowest layer (most significant for METAR usually, or combine if needed)
+            # For simplicity, we take the most significant (lowest) or first one
+            layer = sorted_layers[0]
+            amt_raw = layer.get('amount', '').upper()
+            base_m = layer.get('base', 0)
+            
+            # Map amount
+            if amt_raw in ['FEW', 'SCT', 'BKN', 'OVC']:
+                metar_amount = amt_raw
+            elif amt_raw in ['CLEAR', 'SKC', 'NONE']:
+                metar_amount = "SKC"
+            elif amt_raw == 'OVERCAST':
+                metar_amount = "OVC"
+            elif amt_raw == 'SCATTERED':
+                metar_amount = "SCT"
+            elif amt_raw == 'BROKEN':
+                metar_amount = "BKN"
+            else:
+                # Fallback to coverage percent
+                pct = layer.get('coverage', layer.get('percent', 0))
+                if pct < 5: metar_amount = "SKC"
+                elif pct < 25: metar_amount = "FEW"
+                elif pct < 50: metar_amount = "SCT"
+                elif pct < 90: metar_amount = "BKN"
+                else: metar_amount = "OVC"
+            
+            # Convert base
+            if base_m:
+                try:
+                    base_ft = float(base_m) * 3.28084
+                    if base_ft < 100:
+                        base_ft_final = 0
                     else:
-                        # Format: 2 digits (e.g., 08 for 8C)
-                        dew_str = f"{dew_point:02.0f}"
-            except:
-                pass
+                        base_ft_final = int(round(base_ft / 100) * 100)
+                except:
+                    base_ft_final = 0
 
+        # Priority 2: Use flat keys if list is empty/missing
+        elif cloud_oktas is not None or cloud_desc:
+            oktas = int(cloud_oktas) if cloud_oktas is not None else 0
+            
+            if oktas > 0:
+                if oktas <= 1: metar_amount = "FEW"
+                elif oktas <= 3: metar_amount = "SCT"
+                elif oktas <= 5: metar_amount = "BKN"
+                else: metar_amount = "OVC"
+            else:
+                # Fallback to text
+                desc = cloud_desc.upper()
+                if "CLEAR" in desc or "NONE" in desc: metar_amount = "SKC"
+                elif "FEW" in desc: metar_amount = "FEW"
+                elif "SCATTERED" in desc: metar_amount = "SCT"
+                elif "BROKEN" in desc: metar_amount = "BKN"
+                elif "OVERCAST" in desc or "CLOUDY" in desc: metar_amount = "OVC"
+            
+            # Convert base if available
+            if cloud_base_m:
+                try:
+                    base_ft = float(cloud_base_m) * 3.28084
+                    if base_ft < 100:
+                        base_ft_final = 0
+                    else:
+                        base_ft_final = int(round(base_ft / 100) * 100)
+                except:
+                    base_ft_final = 0
+
+        # --- CRITICAL FIX: Rain implies clouds ---
+        if has_rain and metar_amount == "SKC":
+            # If rain is present but sky is reported clear, force OVC (Overcast)
+            # Use a default low base if not provided
+            if base_ft_final == 0:
+                base_ft_final = 300 # 300ft default for low clouds
+            metar_amount = "OVC"
+
+        # --- Construct Cloud String ---
+        if metar_amount == "SKC":
+            cloud_str = "SKC"
+        else:
+            if base_ft_final == 0:
+                cloud_str = f"{metar_amount}///"
+            else:
+                cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
+
+        # --- Temperature & Dew Point (Crash-Proof Version) ---
+        temp_str = "///"
+        dew_str = "///"
+        A = 17.27
+        B = 237.7
+        
+        # Ensure we have valid numbers before calculating
+        if temp_c is not None and humidity is not None:
+            try:
+                t = float(temp_c)
+                rh = float(humidity)
+                
+                # --- Temperature Formatting ---
+                if t < 0:
+                    temp_str = f"M{abs(t):02.0f}"
+                else:
+                    temp_str = f"{t:02.0f}"
+                
+                # --- Dew Point Calculation (Safe) ---
+                # Only calculate if humidity is strictly between 0 and 100
+                if 0 < rh < 100:
+                    # Avoid division by zero if t is exactly -237.7
+                    if (B + t) != 0:
+                        alpha = (A * t) / (B + t) + math.log(rh / 100.0)
+                        dew_point = (B * alpha) / (A - alpha)
+                        
+                        if dew_point < 0:
+                            dew_str = f"M{abs(dew_point):02.0f}"
+                        else:
+                            dew_str = f"{dew_point:02.0f}"
+                    else:
+                        # t is too cold for this formula
+                        pass
+                # If rh is 0 or 100, we skip calculation and leave dew_str as "///"
+                # (Standard METAR practice for extreme humidity or if calculation fails)
+                
+            except Exception as e:
+                # Catch any unexpected math errors and leave as ///
+                # Optionally print to console for debugging:
+                # print(f"DEBUG: Dew point calc failed: {e}")
+                pass
         # --- Pressure ---
         qnh_str = f"Q{int(float(press_hpa))}" if press_hpa else "Q////"
 
@@ -438,54 +556,7 @@ def weather():
             except:
                 pass
 
-        # --- Clouds (Default SKC) ---
-        cloud_str = "SKC"
-        if isinstance(cloud_layers, list) and len(cloud_layers) > 0:
-            metar_clouds = []
-            try:
-                sorted_layers = sorted(cloud_layers, key=lambda k: k.get('base', 99999))
-            except:
-                sorted_layers = cloud_layers
-            
-            for layer in sorted_layers[:3]:
-                amount = layer.get('amount', '').upper()
-                base_ft = layer.get('base', 0)
-                
-                if amount in ['FEW', 'SCT', 'BKN', 'OVC']:
-                    metar_amount = amount
-                elif amount in ['CLEAR', 'SKC']:
-                    metar_amount = "SKC"
-                elif amount == 'OVERCAST':
-                    metar_amount = "OVC"
-                elif amount == 'SCATTERED':
-                    metar_amount = "SCT"
-                elif amount == 'BROKEN':
-                    metar_amount = "BKN"
-                else:
-                    pct = layer.get('coverage', layer.get('percent', 0))
-                    if pct < 5: metar_amount = "SKC"
-                    elif pct < 25: metar_amount = "FEW"
-                    elif pct < 50: metar_amount = "SCT"
-                    elif pct < 90: metar_amount = "BKN"
-                    else: metar_amount = "OVC"
-                
-                base_val = float(base_ft) if base_ft else 0
-                if base_val < 100 and base_val > 0: 
-                    base_ft_final = int(base_val * 3.28084)
-                else:
-                    base_ft_final = int(base_val)
-                
-                if base_ft_final < 100: base_ft_final = 0
-                else: base_ft_final = int(base_ft_final / 100) * 100
-                
-                cloud_entry = f"{metar_amount}{int(base_ft_final/100):03d}" if base_ft_final > 0 else f"{metar_amount}///"
-                metar_clouds.append(cloud_entry)
-            
-            if metar_clouds:
-                cloud_str = " ".join(metar_clouds)
-
         # --- Wind & Gusts ---
-        # Direction is 3 digits (e.g., 067)
         wind_deg = "///"
         if wind_dir_val in cardinal_lookup:
             wind_deg = f"{cardinal_lookup[wind_dir_val]:03d}"
@@ -495,7 +566,6 @@ def weather():
             except:
                 pass
         
-        # Speed and Gust are 2 digits (e.g., 12 or 10)
         wind_kt = "///"
         if wind_spd_kmh:
             try:
@@ -516,22 +586,20 @@ def weather():
                 wind_str = f"{wind_deg}{wind_kt}G{gust_kt}KT"
             else:
                 wind_str = f"{wind_deg}{wind_kt}KT"
+
         # --- Weather Phenomena ---
-        weather_str = "RA" if rain_mm and float(rain_mm) > 0 else ""
+        weather_str = "RA" if has_rain else ""
 
         # --- Station ID ---
         station_code = station_name.replace(" ", "")[:4].upper() if station_name else f"STN{station_id[-3:]}"
 
-        # --- Construct Standard METAR Line ---
-        # Format: STNID TIME WIND VIS CLOUDS TEMP/DEW QNH [WEATHER] [NOSIG]
-        # Example: LFPG 101230Z 22015G25KT 9999 FEW040 24/15 Q1018 NOSIG
+        # --- Construct METAR Line ---
+        metar_time = time.strftime("%d%H%MZ", time.gmtime())
+        nosig = "NOSIG" if not weather_str else ""
         
-        nosig = "NOSIG" if not weather_str else "" # Add NOSIG if no rain/storm
-        
-        # Build the string
         metar_parts = [
             station_code,
-            now,
+            metar_time,
             wind_str,
             vis_str,
             cloud_str,
@@ -545,19 +613,16 @@ def weather():
             metar_parts.append(nosig)
             
         metar_line = " ".join(metar_parts)
-        
-        # Add raw details
-        dew_info = f"{dew_str}C" if dew_str != "///" else "N/A"
-        gust_info = f"G{gust_kmh}kmh" if gust_kmh else ""
-        cloud_info = cloud_str if cloud_str != "SKC" else "Clear"
-        
         output_lines.append(metar_line)
-#        output_lines.append(f"  Details: {station_name} | Temp: {temp_c}C | DewPt: {dew_info} | Wind: {wind_spd_kmh}kmh{gust_info}/{wind_deg} | QNH: {press_hpa}hPa | Vis: {vis_km}km | Cloud: {cloud_info} | Rain: {rain_mm}mm")
-#        output_lines.append("-" * 40)
+
 
     if not output_lines:
-        output_lines.append("No data found for the specified station.")
-        output_lines.append(f"Try: /weather?station=Adelaide")
+        # If no data found, the first line (date/time) was already added
+        # We can append a message or just return the date/time
+        if len(output_lines) == 1:
+            output_lines.append("No data found for the specified station.")
+        else:
+            output_lines.append("No data found for the specified station.")
 
     return Response("\n".join(output_lines), mimetype='text/plain; charset=utf-8')
 
