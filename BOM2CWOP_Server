@@ -101,7 +101,7 @@ def str_or_dots(number, length):
         return '.' * length
     try:
         if isinstance(number, float):
-            return f'%0{length}.0f' % int(number)
+            return f'%0{length}.0f' % round(number)
         else:
             return f'%0{length}d' % int(number)
     except:
