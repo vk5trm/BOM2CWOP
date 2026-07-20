@@ -101,7 +101,7 @@ class APRSClient:
 def str_or_dots(number, length):
     if number is None: return '.' * length
     try:
-        if isinstance(number, float): return f'%0{length}.0f' % int(number)
+        if isinstance(number, float): return f'%0{length}.0f' % round(number)
         else: return f'%0{length}d' % int(number)
     except: return '.' * length
 def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=None, wind_gust=None, 
