@@ -647,35 +647,64 @@ def weather():
 
         # --- Wind & Gusts ---
         wind_deg = "///"
-        if wind_dir_val in cardinal_lookup:
-            wind_deg = f"{cardinal_lookup[wind_dir_val]:03d}"
-        else:
-            try:
-                wind_deg = f"{int(float(wind_dir_val)):03d}"
-            except:
-                pass
-        
         wind_kt = "///"
+        gust_kt = None
+
+        # 1. Determine Wind Direction (in degrees)
+        wind_deg_val = None
+        if wind_dir_val:
+            if wind_dir_val in cardinal_lookup:
+                wind_deg_val = cardinal_lookup[wind_dir_val]
+            else:
+                try:
+                    wind_deg_val = int(float(wind_dir_val))
+                except:
+                    pass
+        
+        # 2. Determine Wind Speed (in Knots)
+        wind_kt_int = None
         if wind_spd_kmh:
             try:
-                wind_kt = f"{int(float(wind_spd_kmh) / 1.852):02d}"
+                val = float(wind_spd_kmh) / 1.852
+                wind_kt_int = int(round(val))
             except:
                 pass
-        
-        gust_kt = None
+
+        # 3. Determine Gusts (in Knots)
+        gust_kt_val = None
         if gust_kmh:
             try:
-                gust_kt = f"{int(float(gust_kmh) / 1.852):02d}"
+                val = float(gust_kmh) / 1.852
+                gust_kt_val = int(round(val))
             except:
                 pass
-        
-        wind_str = "///////"
-        if wind_deg != "///" and wind_kt != "///":
-            if gust_kt:
-                wind_str = f"{wind_deg}{wind_kt}G{gust_kt}KT"
-            else:
-                wind_str = f"{wind_deg}{wind_kt}KT"
 
+        # 4. Construct Wind String
+        # METAR Rule: If speed is 0, wind is CALM -> "00000KT"
+        # If speed is > 0, use direction and speed.
+        # If data is missing, use "///////"
+
+        if wind_kt_int is not None:
+            if wind_kt_int == 0:
+                # CALM: Force direction to 000, speed to 00
+                wind_str = "00000KT"
+            else:
+                # Wind exists
+                if wind_deg_val is not None:
+                    # Format: DDDSSKT or DDDSSGSSKT
+                    wind_deg = f"{wind_deg_val:03d}"
+                    wind_kt = f"{wind_kt_int:02d}"
+                    if gust_kt_val:
+                        gust_kt = f"{gust_kt_val:02d}"
+                        wind_str = f"{wind_deg}{wind_kt}G{gust_kt}KT"
+                    else:
+                        wind_str = f"{wind_deg}{wind_kt}KT"
+                else:
+                    # Speed is > 0 but direction is missing -> Invalid METAR wind
+                    wind_str = "///////"
+        else:
+            # Speed is missing entirely
+            wind_str = "///////"
         # --- Weather Phenomena ---
         weather_str = "RA" if has_rain else ""
 
