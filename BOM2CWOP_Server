@@ -98,7 +98,7 @@ class APRSClient:
 
 def str_or_dots(number, length):
     if number is None:
-        return '.' * length
+        return '0' * length
     try:
         if isinstance(number, float):
             return f'%0{length}.0f' % round(number)
