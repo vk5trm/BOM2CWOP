@@ -486,171 +486,185 @@ def weather():
 
         # --- Wind Extraction ---
         wind_dir_val = obs.get('wind_dir')
-        wind_spd_kmh = obs.get('wind_spd_kmh') or obs.get('wind')
-        gust_kmh = obs.get('gust_kmh') or obs.get('gust')
+        wind_spd_kmh = obs.get('wind_spd_kmh')
+        wind_spd_kt = obs.get('wind_spd_kt')
+        gust_kmh = obs.get('gust_kmh')
+        gust_kt = obs.get('gust_kt')
 
-        # --- Cloud Extraction (Handles BOTH flat and list formats) ---
-        cloud_str = "SKC"
+        # --- Cloud Extraction (Strict Data Check) ---
+        cloud_str = "///"
         cloud_layers = obs.get('cloud_layers')
         cloud_oktas = obs.get('cloud_oktas')
-        cloud_base_m = obs.get('cloud_base_m')
+        cloud_base_m_flat = obs.get('cloud_base_m')
         cloud_desc = obs.get('cloud', '')
 
-        metar_amount = "SKC"
+        metar_amount = None
         base_ft_final = 0
+        data_found = False
 
-        # Priority 1: Use cloud_layers if it's a list (Standard BOM format)
-        if isinstance(cloud_layers, list) and len(cloud_layers) > 0:
-            # Sort by base
+        # 1. Try Flat Key First (Most Reliable)
+        if cloud_base_m_flat is not None:
+            try:
+                base_m_val = float(cloud_base_m_flat)
+                base_ft = base_m_val * 3.28084
+                base_ft_rounded = round(base_ft / 100) * 100
+                if base_ft_rounded < 50:
+                    base_ft_final = 0
+                else:
+                    base_ft_final = int(base_ft_rounded)
+                
+                metar_amount = "OVC"
+                data_found = True
+            except:
+                pass
+
+        # 2. Fallback to Cloud Layers List
+        if not data_found and isinstance(cloud_layers, list) and len(cloud_layers) > 0:
             try:
                 sorted_layers = sorted(cloud_layers, key=lambda k: k.get('base', 99999))
+                layer = sorted_layers[0]
+                
+                amt_raw = layer.get('amount', '').upper()
+                base_m_val = layer.get('base', 0)
+
+                if amt_raw in ['FEW', 'SCT', 'BKN', 'OVC']:
+                    metar_amount = amt_raw
+                elif amt_raw in ['CLEAR', 'SKC', 'NONE']:
+                    metar_amount = "SKC"
+                elif amt_raw == 'OVERCAST':
+                    metar_amount = "OVC"
+                elif amt_raw == 'SCATTERED':
+                    metar_amount = "SCT"
+                elif amt_raw == 'BROKEN':
+                    metar_amount = "BKN"
+                else:
+                    pct = layer.get('coverage', layer.get('percent', 0))
+                    if pct < 5: metar_amount = "SKC"
+                    elif pct < 25: metar_amount = "FEW"
+                    elif pct < 50: metar_amount = "SCT"
+                    elif pct < 90: metar_amount = "BKN"
+                    else: metar_amount = "OVC"
+
+                if base_m_val:
+                    base_ft = float(base_m_val) * 3.28084
+                    base_ft_rounded = round(base_ft / 100) * 100
+                    if base_ft_rounded < 50:
+                        base_ft_final = 0
+                    else:
+                        base_ft_final = int(base_ft_rounded)
+                
+                data_found = True
             except:
-                sorted_layers = cloud_layers
+                pass
+
+        # 3. Fallback to Flat Keys (oktas)
+        if not data_found and (cloud_oktas is not None or cloud_desc):
+             oktas = int(cloud_oktas) if cloud_oktas is not None else 0
+             if oktas > 0:
+                 if oktas <= 1: metar_amount = "FEW"
+                 elif oktas <= 3: metar_amount = "SCT"
+                 elif oktas <= 5: metar_amount = "BKN"
+                 else: metar_amount = "OVC"
+             else:
+                 desc = cloud_desc.upper()
+                 if "CLEAR" in desc or "NONE" in desc: metar_amount = "SKC"
+                 elif "FEW" in desc: metar_amount = "FEW"
+                 elif "SCATTERED" in desc: metar_amount = "SCT"
+                 elif "BROKEN" in desc: metar_amount = "BKN"
+                 elif "OVERCAST" in desc or "CLOUDY" in desc: metar_amount = "OVC"
+             
+             # Try to get base from flat key if we just used oktas
+             if cloud_base_m_flat and base_ft_final == 0:
+                 try:
+                     base_ft = float(cloud_base_m_flat) * 3.28084
+                     base_ft_rounded = round(base_ft / 100) * 100
+                     if base_ft_rounded < 50: base_ft_final = 0
+                     else: base_ft_final = int(base_ft_rounded)
+                 except: pass
             
-            # Take the lowest layer (most significant for METAR usually, or combine if needed)
-            # For simplicity, we take the most significant (lowest) or first one
-            layer = sorted_layers[0]
-            amt_raw = layer.get('amount', '').upper()
-            base_m = layer.get('base', 0)
+             if metar_amount is not None:
+                data_found = True
+
+        # 4. Weather Phenomena & Forced Clouds (ONLY if NO data was found)
+        # This block now runs LAST, ensuring it only overrides if BOM provided NO cloud data.
+        if not data_found:
+            # Check for Fog: High Humidity (>96%) AND Low Rain (<0.5mm) AND Calm Wind
+            # If these conditions are met, we force Fog (FG) and OVC001 clouds
+            if humidity is not None:
+                try:
+                    rh_val = float(humidity)
+                    # Check Wind Speed
+                    is_calm = False
+                    if wind_kt_int is not None and wind_kt_int < 1:
+                        is_calm = True
+                    elif wind_spd_kt is not None and float(wind_spd_kt) < 1:
+                        is_calm = True
+                    
+                    if rh_val > 96 and (rain_mm_val is None or rain_mm_val < 0.5) and is_calm:
+                        # Force Fog conditions
+                        metar_amount = "OVC"
+                        base_ft_final = 100 # 100ft -> 001
+                        data_found = True
+                        # Note: weather_str will be set to "FG" in the Weather Phenomena section below
+                except:
+                    pass
             
-            # Map amount
-            if amt_raw in ['FEW', 'SCT', 'BKN', 'OVC']:
-                metar_amount = amt_raw
-            elif amt_raw in ['CLEAR', 'SKC', 'NONE']:
-                metar_amount = "SKC"
-            elif amt_raw == 'OVERCAST':
+            # If still no data found, but it is raining significantly, force OVC
+            elif has_rain and rain_mm_val is not None and rain_mm_val >= 0.5:
                 metar_amount = "OVC"
-            elif amt_raw == 'SCATTERED':
-                metar_amount = "SCT"
-            elif amt_raw == 'BROKEN':
-                metar_amount = "BKN"
-            else:
-                # Fallback to coverage percent
-                pct = layer.get('coverage', layer.get('percent', 0))
-                if pct < 5: metar_amount = "SKC"
-                elif pct < 25: metar_amount = "FEW"
-                elif pct < 50: metar_amount = "SCT"
-                elif pct < 90: metar_amount = "BKN"
-                else: metar_amount = "OVC"
-            
-            # Convert base
-            if base_m:
-                try:
-                    base_ft = float(base_m) * 3.28084
-                    if base_ft < 100:
-                        base_ft_final = 0
-                    else:
-                        base_ft_final = int(round(base_ft / 100) * 100)
-                except:
-                    base_ft_final = 0
+                base_ft_final = 2500
+                data_found = True
+                # Note: weather_str will be set to "RA" in the Weather Phenomena section below
 
-        # Priority 2: Use flat keys if list is empty/missing
-        elif cloud_oktas is not None or cloud_desc:
-            oktas = int(cloud_oktas) if cloud_oktas is not None else 0
-            
-            if oktas > 0:
-                if oktas <= 1: metar_amount = "FEW"
-                elif oktas <= 3: metar_amount = "SCT"
-                elif oktas <= 5: metar_amount = "BKN"
-                else: metar_amount = "OVC"
-            else:
-                # Fallback to text
-                desc = cloud_desc.upper()
-                if "CLEAR" in desc or "NONE" in desc: metar_amount = "SKC"
-                elif "FEW" in desc: metar_amount = "FEW"
-                elif "SCATTERED" in desc: metar_amount = "SCT"
-                elif "BROKEN" in desc: metar_amount = "BKN"
-                elif "OVERCAST" in desc or "CLOUDY" in desc: metar_amount = "OVC"
-            
-            # Convert base if available
-            if cloud_base_m:
-                try:
-                    base_ft = float(cloud_base_m) * 3.28084
-                    if base_ft < 100:
-                        base_ft_final = 0
-                    else:
-                        base_ft_final = int(round(base_ft / 100) * 100)
-                except:
-                    base_ft_final = 0
-
-        # --- CRITICAL FIX: Rain implies clouds ---
-        if has_rain and metar_amount == "SKC":
-            # If rain is present but sky is reported clear, force OVC (Overcast)
-            # Use a default low base if not provided
-            if base_ft_final == 0:
-                base_ft_final = 300 # 300ft default for low clouds
-            metar_amount = "OVC"
-
-        # --- Construct Cloud String ---
-        if metar_amount == "SKC":
+        # 5. Construct Cloud String
+        if not data_found:
+            cloud_str = "///"
+        elif metar_amount == "SKC":
             cloud_str = "SKC"
         else:
-            # If base is 0 (ground level/obscured), show 000
-            # If base is >= 100, show 010, 020, etc.
             if base_ft_final == 0:
                 cloud_str = f"{metar_amount}000"
             else:
                 cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
 
-        # --- Temperature & Dew Point (Crash-Proof Version) ---
+        # --- Temperature & Dew Point (Direct BOM Data) ---
         temp_str = "///"
         dew_str = "///"
-        A = 17.27
-        B = 237.7
-        
-        # Ensure we have valid numbers before calculating
-        if temp_c is not None and humidity is not None:
+
+        # --- Temperature Formatting ---
+        if temp_c is not None:
             try:
-                t = float(temp_c)
-                rh = float(humidity)
-                
-                # --- Temperature Formatting ---
-                if t < 0:
-                    temp_str = f"M{abs(t):02.0f}"
-                else:
-                    temp_str = f"{t:02.0f}"
-                
-                # --- Dew Point Calculation (Safe) ---
-                # Only calculate if humidity is strictly between 0 and 100
-                if 0 < rh < 100:
-                    # Avoid division by zero if t is exactly -237.7
-                    if (B + t) != 0:
-                        alpha = (A * t) / (B + t) + math.log(rh / 100.0)
-                        dew_point = (B * alpha) / (A - alpha)
-                        
-                        if dew_point < 0:
-                            dew_str = f"M{abs(dew_point):02.0f}"
-                        else:
-                            dew_str = f"{dew_point:02.0f}"
-                    else:
-                        # t is too cold for this formula
-                        pass
-                # If rh is 0 or 100, we skip calculation and leave dew_str as "///"
-                # (Standard METAR practice for extreme humidity or if calculation fails)
-                
-            except Exception as e:
-                # Catch any unexpected math errors and leave as ///
-                # Optionally print to console for debugging:
-                # print(f"DEBUG: Dew point calc failed: {e}")
-                pass
+               t = float(temp_c)
+               if t < 0:
+                  temp_str = f"M{abs(t):02.0f}"
+               else:
+                   temp_str = f"{t:02.0f}"
+            except:
+                   pass
+
+        # --- Dew Point Formatting (Direct from BOM JSON "dewpt") ---
+        # BOM provides dew point directly in Celsius
+        raw_dewpt = obs.get('dewpt')
+        if raw_dewpt is not None:
+            try:
+               dp = float(raw_dewpt)
+               if dp < 0:
+                  dew_str = f"M{abs(dp):02.0f}"
+               else:
+                   dew_str = f"{dp:02.0f}"
+            except:
+                   pass
+
+
         # --- Pressure ---
         qnh_str = f"Q{int(float(press_hpa))}" if press_hpa else "Q////"
 
-        # --- Visibility ---
-        vis_str = "9999"
-        if vis_km:
-            try:
-                vis_val = float(vis_km)
-                vis_str = "9999" if vis_val >= 10 else ("0000" if vis_val < 0.1 else f"{int(vis_val * 1000):04d}")
-            except:
-                pass
-
-        # --- Wind & Gusts ---
+        # --- Wind & Gusts (Using existing variables) ---
         wind_deg = "///"
-        wind_kt = "///"
-        gust_kt = None
+        wind_kt_int = None
+        gust_kt_val = None
 
-        # 1. Determine Wind Direction (in degrees)
+   # 2. Determine Wind Direction
         wind_deg_val = None
         if wind_dir_val:
             if wind_dir_val in cardinal_lookup:
@@ -660,53 +674,116 @@ def weather():
                     wind_deg_val = int(float(wind_dir_val))
                 except:
                     pass
-        
-        # 2. Determine Wind Speed (in Knots)
+
+        # 3. Determine Wind Speed (KT First)
         wind_kt_int = None
-        if wind_spd_kmh:
+        
+        # Try KT first
+        if wind_spd_kt is not None:
             try:
-                val = float(wind_spd_kmh) / 1.852
-                wind_kt_int = int(round(val))
+                wind_kt_int = int(round(float(wind_spd_kt)))
+            except:
+                pass
+        
+        # Fallback to KM/H if KT is missing
+        if wind_kt_int is None and wind_spd_kmh:
+            try:
+                wind_kt_int = int(round(float(wind_spd_kmh) / 1.852))
             except:
                 pass
 
-        # 3. Determine Gusts (in Knots)
+        # 4. Determine Gusts (KT First)
         gust_kt_val = None
-        if gust_kmh:
+        
+        # Try KT first
+        if gust_kt is not None:
             try:
-                val = float(gust_kmh) / 1.852
-                gust_kt_val = int(round(val))
+                gust_kt_val = int(round(float(gust_kt)))
             except:
                 pass
-
-        # 4. Construct Wind String
-        # METAR Rule: If speed is 0, wind is CALM -> "00000KT"
-        # If speed is > 0, use direction and speed.
-        # If data is missing, use "///////"
-
+        
+        # Fallback to KM/H
+        if gust_kt_val is None and gust_kmh:
+            try:
+                gust_kt_val = int(round(float(gust_kmh) / 1.852))
+            except:
+                pass
+        
+        # 5. Construct Wind String
+        # METAR Rules:
+        # - Missing data: "///////"
+        # - Calm (0 kt): "00000KT"
+        # - Valid wind: "DDDSSKT" or "DDDSSGSSKT"
+        
         if wind_kt_int is not None:
             if wind_kt_int == 0:
-                # CALM: Force direction to 000, speed to 00
+                # Calm
                 wind_str = "00000KT"
             else:
-                # Wind exists
                 if wind_deg_val is not None:
-                    # Format: DDDSSKT or DDDSSGSSKT
+                    # Valid direction and speed
                     wind_deg = f"{wind_deg_val:03d}"
                     wind_kt = f"{wind_kt_int:02d}"
-                    if gust_kt_val:
+                    
+                    if gust_kt_val is not None:
                         gust_kt = f"{gust_kt_val:02d}"
                         wind_str = f"{wind_deg}{wind_kt}G{gust_kt}KT"
                     else:
                         wind_str = f"{wind_deg}{wind_kt}KT"
                 else:
-                    # Speed is > 0 but direction is missing -> Invalid METAR wind
+                    # Speed exists but direction is missing -> Invalid/Missing
                     wind_str = "///////"
         else:
-            # Speed is missing entirely
+            # No speed data found -> Missing
             wind_str = "///////"
+
         # --- Weather Phenomena ---
-        weather_str = "RA" if has_rain else ""
+        weather_str = ""
+
+        # Check for Rain
+        if has_rain:
+            if rain_mm_val is not None and rain_mm_val >= 0.5:
+                weather_str = "RA"
+        
+        # Check for Fog (High RH, Low Rain, Calm)
+        # Note: We set the CLOUDS in the previous block if data was missing.
+        # Here we just set the weather string.
+        if not weather_str and humidity is not None:
+            try:
+                rh_val = float(humidity)
+                is_calm = False
+                if wind_kt_int is not None and wind_kt_int < 1:
+                    is_calm = True
+                elif wind_spd_kt is not None and float(wind_spd_kt) < 1:
+                    is_calm = True
+
+                if rh_val > 96 and (rain_mm_val is None or rain_mm_val < 0.5) and is_calm:
+                    weather_str = "FG"
+            except:
+                pass
+
+        # --- Visibility ---
+        vis_str = "9999"  # Default to good visibility
+        
+        # If we already determined the weather phenomenon (FG or RA), force visibility
+        if weather_str == "FG":
+            vis_str = "0000"  # Fog implies near-zero visibility
+        elif weather_str == "RA":
+            vis_str = "0500"  # Rain implies reduced visibility (500m)
+        else:
+            # Otherwise, calculate from BOM data
+            if vis_km:
+                try:
+                    vis_val = float(vis_km)
+                    if vis_val >= 10:
+                        vis_str = "9999"
+                    elif vis_val < 0.1:
+                        vis_str = "0000"
+                    else:
+                        vis_str = f"{int(vis_val * 1000):04d}"
+                except:
+                    pass
+            # If vis_km is missing and no weather forced, keep default "9999"
 
         # --- Station ID ---
         station_code = station_name.replace(" ", "")[:4].upper() if station_name else f"STN{station_id[-3:]}"
