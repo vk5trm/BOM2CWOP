@@ -593,14 +593,8 @@ def weather():
             if humidity is not None:
                 try:
                     rh_val = float(humidity)
-                    # Check Wind Speed
-                    is_calm = False
-                    if wind_kt_int is not None and wind_kt_int < 1:
-                        is_calm = True
-                    elif wind_spd_kt is not None and float(wind_spd_kt) < 1:
-                        is_calm = True
                     
-                    if rh_val > 96 and (rain_mm_val is None or rain_mm_val < 0.5) and is_calm:
+                    if rh_val > 96 and (rain_mm_val is None or rain_mm_val < 0.5):
                         # Force Fog conditions
                         metar_amount = "OVC"
                         base_ft_final = 100 # 100ft -> 001
@@ -751,13 +745,8 @@ def weather():
         if not weather_str and humidity is not None:
             try:
                 rh_val = float(humidity)
-                is_calm = False
-                if wind_kt_int is not None and wind_kt_int < 1:
-                    is_calm = True
-                elif wind_spd_kt is not None and float(wind_spd_kt) < 1:
-                    is_calm = True
 
-                if rh_val > 96 and (rain_mm_val is None or rain_mm_val < 0.5) and is_calm:
+                if rh_val > 96 and (rain_mm_val is None or rain_mm_val < 0.5):
                     weather_str = "FG"
             except:
                 pass
