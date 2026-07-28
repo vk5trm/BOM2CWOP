@@ -600,9 +600,9 @@ def weather():
             
               # Check Wind Speed
                  wind_low = False
-                 if wind_kt_int is not None and wind_kt_int < 3:
+                 if wind_kt_int is not None and 1 <= wind_kt_int <= 5:
                     wind_low = True
-                 elif wind_spd_kt is not None and float(wind_spd_kt) < 3:
+                 elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
                       wind_low = True
             
               # Calculate Dew Point Depression if dew point is available
@@ -610,7 +610,7 @@ def weather():
                  if dew_val is not None:
                     dew_spread = temp_val - dew_val
                  # If spread is less than 2 degrees, consider it saturated
-                    if dew_spread < 2:
+                    if dew_spread <= 2:
                        is_saturated = True
                     else:
                 # Fallback: If dew point is missing, rely on high humidity (>96%) as a proxy for saturation
@@ -779,9 +779,9 @@ def weather():
         
                # Check Wind Speed
                wind_low = False
-               if wind_kt_int is not None and wind_kt_int < 3:
+               if wind_kt_int is not None and 1 <= wind_kt_int <= 5:
                   wind_low = True
-               elif wind_spd_kt is not None and float(wind_spd_kt) < 3:
+               elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
                   wind_low = True
 
                # Determine Saturation (Low Spread OR High Humidity)
@@ -789,7 +789,7 @@ def weather():
                if dew_val is not None:
                # Primary Check: Temperature - Dewpoint < 2
                   dew_spread = temp_val - dew_val
-                  if dew_spread < 2:
+                  if dew_spread <= 2:
                      is_saturated = True
                else:
                # Fallback: If dew point is missing, use high humidity as a proxy
