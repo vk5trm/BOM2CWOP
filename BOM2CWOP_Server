@@ -588,53 +588,55 @@ def weather():
         # 4. Weather Phenomena & Forced Clouds (ONLY if NO data was found)
         # This block now runs LAST, ensuring it only overrides if BOM provided NO cloud data.
         if not data_found:
-        # Check for Fog: 
-           if humidity is not None and temp_c is not None:
-              try:
-                 rh_val = float(humidity)
-                 temp_val = float(temp_c)
-            
-              # Retrieve dew point directly from obs if available (as seen in the diff)
-                 raw_dewpt = obs.get('dewpt')
-                 dew_val = float(raw_dewpt) if raw_dewpt is not None else None
-            
-              # Check Wind Speed
-                 wind_low = False
-                 if wind_kt_int is not None and 1 <= wind_kt_int <= 5:
-                    wind_low = True
-                 elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
-                      wind_low = True
-            
-              # Calculate Dew Point Depression if dew point is available
-                 is_saturated = False
-                 if dew_val is not None:
-                    dew_spread = temp_val - dew_val
-                 # If spread is less than 2 degrees, consider it saturated
-                    if dew_spread <= 2:
-                       is_saturated = True
-                    else:
-                # Fallback: If dew point is missing, rely on high humidity (>96%) as a proxy for saturation
-                # This maintains backward compatibility if dew point data is missing
-                     if rh_val > 96:
-                         is_saturated = True
+            # Check for Fog: 
+            if humidity is not None and temp_c is not None:
+                try:
+                    rh_val = float(humidity)
+                    temp_val = float(temp_c)
 
-              # Final Fog Logic:
-              # Must be calm, low rain, AND (saturated via dew spread OR high humidity)
+                    # Retrieve dew point directly from obs if available (as seen in the diff)
+                    raw_dewpt = obs.get('dewpt')
+                    dew_val = float(raw_dewpt) if raw_dewpt is not None else None
+
+                    # Check Wind Speed
+                    wind_low = False
+                    if wind_kt_int is not None and 1 <= wind_kt_int <= 5:
+                        wind_low = True
+                    elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
+                        wind_low = True
+
+                    # Calculate Dew Point Depression if dew point is available
+                    is_saturated = False
+                    if dew_val is not None:
+                        dew_spread = temp_val - dew_val
+                        # If spread is less than 2 degrees, consider it saturated
+                        if dew_spread <= 2:
+                            is_saturated = True
+                        else:
+                            # Fallback: If dew point is missing, rely on high humidity (>96%) as a proxy for saturation
+                            # This maintains backward compatibility if dew point data is missing
+                            if rh_val > 96:
+                                is_saturated = True
+
+                    # Final Fog Logic:
+                    # Must be calm, low rain, AND (saturated via dew spread OR high humidity)
                     if is_saturated and (rain_mm_val is None or rain_mm_val < 0.5) and wind_low:
-                    # Force Fog conditions
+                        # Force Fog conditions
                         metar_amount = "OVC"
                         base_ft_final = 100  # 100ft -> 001
                         data_found = True
-                # Note: weather_str will be set to "FG" in the Weather Phenomena section below
-              except:
-                  pass
+                        # Note: weather_str will be set to "FG" in the Weather Phenomena section below
+                    
+                except Exception:
+                    pass
 
-    # If still no data found, but it is raining significantly, force OVC
-        elif has_rain and rain_mm_val is not None and rain_mm_val >= 0.5:
-          metar_amount = "OVC"
-          base_ft_final = 2500
-          data_found = True
-          # Note: weather_str will be set to "RA" in the Weather Phenomena section below
+        # If still no data found, but it is raining significantly, force OVC
+        # This is a separate check, runs if fog logic didn't set data_found=True
+        if not data_found and has_rain and rain_mm_val is not None and rain_mm_val >= 0.5:
+            metar_amount = "OVC"
+            base_ft_final = 2500
+            data_found = True
+            # Note: weather_str will be set to "RA" in the Weather Phenomena section below
 
         # 5. Construct Cloud String
         if not data_found:
