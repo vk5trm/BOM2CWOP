@@ -400,11 +400,21 @@ HTML_PAGE = """
 # Dynamically build the list using names from STATION_CONFIG
 for full_id, config in STATION_CONFIG.items():
     display_name = config.get('name', f"Station {full_id.split('.')[-1]}")
+    
+    # Extract Product Code and Station ID from the full_id (e.g., "IDS60910.94682")
+    parts = full_id.split('.')
+    product_code = parts[0]
+    station_id = parts[-1]
+    
+    # Construct the direct BOM JSON URL
+    bom_url = f"http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json"
+    
     # Use the name in the URL parameter for filtering
     HTML_PAGE += f"""
     <div class="station-item">
         <span class="station-name">{display_name}</span><br>
-        <a href="/weather?station={display_name}">View METAR Data for {display_name}</a>
+        <a href="/weather?station={display_name}">View METAR Data</a> | 
+        <a href="{bom_url}" target="_blank">View Original BOM JSON</a>
     </div>
     """
 
@@ -413,8 +423,7 @@ HTML_PAGE += """
 
     <h3>Other Endpoints:</h3>
     <ul>
-        <li><a href="/">Home</a></li>
-        <li><a href="/weather">All Stations (Default)</a></li>
+        <li><a href="/weather">Show all Stations (Default)</a></li>
         <li><a href="/aprs">Trigger Manual APRS Upload</a></li>
     </ul>
 </body>
@@ -603,20 +612,31 @@ def weather():
                     if wind_kt_int is not None and 1 <= wind_kt_int <= 5:
                         wind_low = True
                     elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
-                        wind_low = True
-
-                    # Calculate Dew Point Depression if dew point is available
+                         wind_low = True
+                    # --- Determine Saturation (Strict Logic: Both DP Spread AND High RH) ---
                     is_saturated = False
-                    if dew_val is not None:
-                        dew_spread = temp_val - dew_val
-                        # If spread is less than 2 degrees, consider it saturated
-                        if dew_spread <= 2:
-                            is_saturated = True
-                        else:
-                            # Fallback: If dew point is missing, rely on high humidity (>96%) as a proxy for saturation
-                            # This maintains backward compatibility if dew point data is missing
-                            if rh_val > 96:
-                                is_saturated = True
+
+                    # Only calculate if we have valid temperature and humidity data
+                    if dew_val is not None and rh_val is not None:
+                      # Primary Check: Temperature - Dewpoint <= 2°C
+                      dew_spread = temp_val - dew_val
+                      spread_condition = (dew_spread <= 2)
+
+                    # Secondary Check: Relative Humidity > 96%
+                    rh_condition = (rh_val > 96)
+
+                    # Both conditions must be true
+                    if spread_condition and rh_condition:
+                        is_saturated = True
+                    elif dew_val is not None:
+                    # Fallback: If RH data is missing, rely solely on DP spread
+                       dew_spread = temp_val - dew_val
+                       if dew_spread <= 2:
+                           is_saturated = True
+                       elif rh_val is not None:
+                       # Fallback: If DP data is missing, rely solely on RH
+                          if rh_val > 96:
+                             is_saturated = True
 
                     # Final Fog Logic:
                     # Must be calm, low rain, AND (saturated via dew spread OR high humidity)
@@ -786,17 +806,30 @@ def weather():
                elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
                   wind_low = True
 
-               # Determine Saturation (Low Spread OR High Humidity)
+               # --- Determine Saturation (Strict Logic: Both DP Spread AND High RH) ---
                is_saturated = False
-               if dew_val is not None:
-               # Primary Check: Temperature - Dewpoint < 2
-                  dew_spread = temp_val - dew_val
-                  if dew_spread <= 2:
-                     is_saturated = True
-               else:
-               # Fallback: If dew point is missing, use high humidity as a proxy
-                   if rh_val > 96:
-                      is_saturated = True
+
+               # Only calculate if we have valid temperature and humidity data
+               if dew_val is not None and rh_val is not None:
+                   # Primary Check: Temperature - Dewpoint <= 2°C
+                   dew_spread = temp_val - dew_val
+                   spread_condition = (dew_spread <= 2)
+    
+                   # Secondary Check: Relative Humidity > 96%
+                   rh_condition = (rh_val > 96)
+    
+                   # Both conditions must be true
+                   if spread_condition and rh_condition:
+                       is_saturated = True
+               elif dew_val is not None:
+               # Fallback: If RH data is missing, rely solely on DP spread
+                     dew_spread = temp_val - dew_val
+                     if dew_spread <= 2:
+                         is_saturated = True
+               elif rh_val is not None:
+               # Fallback: If DP data is missing, rely solely on RH
+                      if rh_val > 96:
+                         is_saturated = True
 
                # Final Fog Logic
                # Conditions: Saturated (Spread < 2 OR RH > 96%) AND Low Rain AND Calm Wind
