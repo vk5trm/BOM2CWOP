@@ -1,98 +1,126 @@
-# BOM2CWOP
+# BOM to APRS Web Server
 
-Australian Bureau of Meteorology Observations to APRS CWOP Uploader
+**Fetches real-time weather data from the Australian Bureau of Meteorology (BOM) and automatically uploads it to the APRS-IS network.**
 
-This Python script fetches real-time weather observations directly from the Australian Bureau of Meteorology (BOM) HTTP API and uploads them to the APRS (Automatic Packet Reporting System) via the CWOP (Citizen Weather Observer Program) network.
+This Flask-based server acts as a bridge between official Australian weather data and the APRS (Automatic Packet Reporting System) community. It runs as a background service, collecting data at regular intervals and broadcasting it as standard weather packets.
 
-## Overview
+## 🚀 Features
 
-BOM2CWOP is designed to run as a periodic cron job (recommended every 10–20 minutes). It automatically queries the BOM API for the latest JSON observation data for your selected station and pushes the data to the global CWOP network.
+*   **Automatic Scheduling**: Fetches data every **15 minutes** (configurable) via a background thread.
+*   **Multi-Station Support**: Configurable to monitor multiple BOM stations simultaneously.
+*   **METAR Generator**: Exposes a web endpoint (`/weather`) that generates standard METAR format reports for human-readable viewing or integration.
+*   **APRS Integration**: Directly connects to the APRS-IS network to upload formatted weather packets.
+*   **Fog & Rain Logic**: Implements custom algorithms to detect fog conditions (based on dew point spread and humidity) and significant rainfall to enhance packet accuracy.
+*   **Web Interface**: Includes a simple dashboard to view active stations and trigger manual uploads.
 
-> **Note:** This script works **only** in Australia using official BOM data.
+## 📋 Prerequisites
 
-## Requirements
+*   **Python 3.6+**
+*   Required Python packages:
+    *   `flask`
+    *   `requests`
 
-- Python 3.x
-- The `requests` library (if not using standard `urllib`)
-- Access to the internet
-- A valid APRS callsign and password (or use `00000` for generic CWOP password)
+## ⚙️ Configuration
 
-## Installation
+Before running the server, you must configure the following settings in the script:
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/vk5trm/BOM2CWOP.git
-   cd BOM2CWOP
-   ```
-
-2. **Important:** Ensure you pull the latest commit (`e695573`) to use the new HTTP API logic.
-   ```bash
-   git pull origin main
-   ```
-
-## Configuration
-
-Update the following variables in `BOM2CWOP.py`:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `APRS_CALL` | Your APRS callsign | `VK1ABC` |
-| `APRS_PASSCODE` | Your APRS passcode (use `00000` for generic CWOP) | `00000` |
-| `STATION_ID` | The BOM Observation Station ID mapped to callsign (e.g., `IDS60910.95687`) | `"IDS60910.95687": "VK5TRM-13"` |
-
-
-> **How to find your Station ID:**
-> 1. Visit the BOM Weather Data website.
-> 2. Search for your local weather station by clicking on you state then click on "Latest Observations"
-> 3. Go though the list and find the town/city you are interested in and click on the name.
-> 4. go to the bottom of the page and find the link to the .JSON file Note the full numeric ID (LLLNNNNN.NNNNN.JSON) in the URL
-     (ie https://www.bom.gov.au/fwo/IDS60910/IDS60910.95687.json) would be STATION_ID="IDS60910.95687": "VK5TRM-13 
-> 5. Enter this ID in the `STATION_ID` field.
-
-### Supported States
-
-The script automatically constructs the correct API URL based on your state:
-- **NSW** (New South Wales & ACT)
-- **VIC** (Victoria)
-- **QLD** (Queensland)
-- **SA** (South Australia)
-- **WA** (Western Australia)
-- **TAS** (Tasmania)
-- **NT** (Northern Territory)
-
-## Usage
-
-Run the script manually for testing:
-```bash
-python BOM2CWOP.py
+### 1. APRS Credentials
+Locate the **Global APRS Config** section near the top of the file.
+```python
+APRS_CALL = 'VK5TRM-5'          # Your callsign
+APRS_PASSCODE = '00000'         # ⚠️ REPLACE with your real APRS passcode
+APRS_SERVER = 'aunz.aprs2.net'  # APRS-IS server (check documentation for your region)
+APRS_PORT = 14580               # APRS-IS port
 ```
 
-### Automate with Cron
+### 2. Station Configuration
+Define which BOM stations you want to monitor in the `STATION_CONFIG` dictionary.
+```python
+STATION_CONFIG = {
+    "IDS60910.94682": {
+        "aprs_call": "YLOX",     # The callsign displayed on APRS for this station
+        "name": "YLOX"           # Friendly name for the web interface
+    },
+    "IDS60910.95687": {
+        "aprs_call": "YREN",
+        "name": "YREN"
+    }
+}
+```
+*Format:* `"ProductCode.StationID": { "aprs_call": "DISPLAY_CALL", "name": "Friendly Name" }`
 
-To run automatically every 15 minutes, add this to your crontab (`crontab -e`):
-
-```bash
-*/15 * * * * /usr/bin/python3 /path/to/BOM2CWOP/BOM2CWOP.py >> /var/log/bom2cwop.log 2>&1
+### 3. Scheduler Interval
+Adjust the upload frequency in the **Scheduler settings** section.
+```python
+SCHEDULE_INTERVAL_MINUTES = 15
+SCHEDULE_INTERVAL_SECONDS = SCHEDULE_INTERVAL_MINUTES * 60
 ```
 
-## Changes in Latest Version (v1.1)
+## 🛠️ Installation & Run
 
-- **Removed FTP dependency:** No more manual downloading of `.tgz` or `.gz` files.
-- **Direct API Access:** Fetches JSON data directly via HTTP.
-- **403 Error Fix:** Resolved authentication/access issues with the BOM server.
-- **Simplified Config:** Replaced `TAR_PATH` and complex file extraction logic with a simple `STATION_ID`.
+1.  **Install Dependencies**:
+    ```bash
+    pip install flask requests
+    ```
 
-## Troubleshooting
+2.  **Test run the Server**:
+    ```bash
+    python BOM2CWOP_Server.py
+    ```
 
-- **403 Forbidden Error:** Ensure you have updated to the latest version (`e695573`). The previous version had an API version mismatch.
-- **Station Not Found:** Verify your `STATION_ID` is correct. You can find valid IDs on the [BOM Weather Data](http://www.bom.gov.au) site.
-- **No Data Uploaded:** Check your `APRS_CALL` and `APRS_PASSCODE`.
+3.  **Verify**:
+    *   The console will output: `Web server starting on port 5000...`
+    *   Open your browser to `http://localhost:5000` to see the dashboard.
 
-## License
+4.  **  Copy BOM2CWOP_server files to correct locations**:
+    Main file:
+    ```bash
+    sudo cp BOM2CWOP_server /usr/local/bin
+    SystemMD file:
+    ```bash
+    sudo cp BOM2CWOP_server.service /usr/lib/systemd/system/
+    ```
+5.  **  Enable and start service**:
+    Enable service: 
+    ```bash
+    sudo systemctl enable BOM2CWOP_server.service
+    ```
+    Start service: 
+    ```bash
+    sudo systemctl start BOM2CWOP_server.service
+    ```  
+      
+## 🌐 Web Endpoints
 
-This project is open source.
+Once running, the server exposes the following endpoints:
 
-## Credits
+| Endpoint | Description |
+| :--- | :--- |
+| `/` | **Home Page**: Dashboard showing active stations, links to raw BOM data, and status. |
+| `/weather` | **METAR Output**: Returns formatted METAR text for all configured stations. |
+| `/weather?station={name}` | **Filtered METAR**: Returns METAR for a specific station by name. |
+| `/aprs` | **Manual Trigger**: Forces an immediate data fetch and upload to APRS. Returns JSON status. |
 
-Created by Robert Middelmann **VK5TRM** & Mark Jessop **VK5QI**
-```
+## 🧠 How It Works
+
+1.  **Data Fetching**: The server queries the BOM JSON API (`www.bom.gov.au`) for the latest observations.
+2.  **Rain Calculation**: It specifically calculates "Rain Since Midnight" by analyzing historical data points (00:00 and 09:00 timestamps) to handle daily resets in BOM data.
+3.  **Fog Detection**: If cloud data is missing, the script infers fog conditions by checking:
+    *   Dew point spread ≤ 2°C **OR** Relative Humidity > 96%
+    *   Wind speed ≤ 5 knots
+    *   Rainfall < 0.5mm
+4.  **APRS Formatting**: Data is converted into APRS weather packet format (`!LAT/LON_...`) and sent via TCP to the APRS-IS server.
+
+## ⚠️ Security Note
+
+*   **Passcode**: Never commit your `APRS_PASSCODE` to a public repository. The script includes a placeholder (`00000`) and a warning comment to ensure you replace it.
+*   **Network**: The server listens on `0.0.0.0:5000`. If exposing this to a public network, ensure you have appropriate firewall rules or authentication in place.
+
+## 📄 License
+
+Created by **Robert Middelmann (vk5trm)** & **Mark Jessop (vk5qi)**.
+Version: 1.5-Final
+
+---
+
+
