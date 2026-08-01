@@ -70,25 +70,28 @@ SCHEDULE_INTERVAL_SECONDS = SCHEDULE_INTERVAL_MINUTES * 60
 
 3.  **Verify**:
     *   The console will output: `Web server starting on port 5000...`
-    *   Open your browser to `http://localhost:5000` to see the dashboard.
+    *   Open your browser to `http://localhost:5000` to see the dashboard
+    *   
+4a.  **Copy Main BOM2CWOP_server file to correct location**:
 
-4.  **  Copy BOM2CWOP_server files to correct locations**:
-    Main file:
-    ```bash
-    sudo cp BOM2CWOP_server /usr/local/bin
-    SystemMD file:
-    ```bash
-    sudo cp BOM2CWOP_server.service /usr/lib/systemd/system/
-    ```
-5.  **  Enable and start service**:
-    Enable service: 
-    ```bash
-    sudo systemctl enable BOM2CWOP_server.service
-    ```
-    Start service: 
-    ```bash
-    sudo systemctl start BOM2CWOP_server.service
-    ```  
+  ```bash
+  sudo cp BOM2CWOP_server /usr/local/bin
+  ```
+
+4b. **Copy BOM2CWOP_server system.service file to correct location**:
+
+  ```bash
+  sudo cp BOM2CWOP_server.service /usr/lib/systemd/system/    
+  ```
+
+5a.  **Enable service**:
+  ```bash
+  sudo systemctl enable BOM2CWOP_server.service
+  ```
+5b.  **Start service**: 
+  ```bash
+  sudo systemctl start BOM2CWOP_server.service
+  ```  
       
 ## 🌐 Web Endpoints
 
