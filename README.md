@@ -6,7 +6,7 @@ This Flask-based server acts as a bridge between official Australian weather dat
 
 ## 🚀 Features
 
-*   **Automatic Scheduling**: Fetches data every **15 minutes** (configurable) via a background thread.
+*   **Automatic Scheduling**: Fetches data every **15 minutes** (configurable) via crontab -e.
 *   **Multi-Station Support**: Configurable to monitor multiple BOM stations simultaneously.
 *   **METAR Generator**: Exposes a web endpoint (`/weather`) that generates standard METAR format reports for human-readable viewing or integration.
 *   **APRS Integration**: Directly connects to the APRS-IS network to upload formatted weather packets.
@@ -49,13 +49,6 @@ STATION_CONFIG = {
 ```
 *Format:* `"ProductCode.StationID": { "aprs_call": "DISPLAY_CALL", "name": "Friendly Name" }`
 
-### 3. Scheduler Interval
-Adjust the upload frequency in the **Scheduler settings** section.
-```python
-SCHEDULE_INTERVAL_MINUTES = 15
-SCHEDULE_INTERVAL_SECONDS = SCHEDULE_INTERVAL_MINUTES * 60
-```
-
 ## 🛠️ Installation & Run
 
 1.  **Install Dependencies**:
@@ -91,7 +84,11 @@ SCHEDULE_INTERVAL_SECONDS = SCHEDULE_INTERVAL_MINUTES * 60
 5b.  **Start service**: 
   ```bash
   sudo systemctl start BOM2CWOP_server.service
-  ```  
+  ```
+6.   **Create Crontab entry using `crobtab -e`.
+ ```bash
+ */15 * * * * curl http://127.0.0.1:5000/aprs >/dev/null
+ ``` 
       
 ## 🌐 Web Endpoints
 

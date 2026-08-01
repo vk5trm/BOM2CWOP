@@ -36,10 +36,6 @@ APRS_PASSCODE = '00000'  # ⚠️ Replace with your real passcode
 APRS_SERVER = 'aunz.aprs2.net'
 APRS_PORT = 14580
 
-# Scheduler settings
-SCHEDULE_INTERVAL_MINUTES = 15
-SCHEDULE_INTERVAL_SECONDS = SCHEDULE_INTERVAL_MINUTES * 60
-
 # --- SYSTEM CONFIGURATION ---
 BOM_BASE_URL = "http://www.bom.gov.au/fwo/{product_code}/{product_code}.{station_id}.json"
 
@@ -309,58 +305,6 @@ def fetch_bom_data(station_id, product_code):
     except Exception as e:
         print(f"[Fetch] Error for {station_id}: {e}")
         return None, None
-
-def upload_to_aprs():
-    """Runs in background thread to upload data every 15 minutes using Global APRS_CALL for login"""
-    print(f"[Scheduler] Starting automatic upload loop (every {SCHEDULE_INTERVAL_MINUTES} mins)")
-    
-    while True:
-        try:
-            print(f"[Scheduler] Fetching data at {time.strftime('%Y-%m-%d %H:%M:%S')}")
-            aprs_client = APRSClient(APRS_CALL, APRS_PASSCODE, host=APRS_SERVER, port=APRS_PORT)
-            sent_count = 0
-            
-            try:
-                aprs_client.connect()
-                
-                for full_id, config in STATION_CONFIG.items():
-                    parts = full_id.split('.')
-                    station_product_code = parts[0]
-                    station_id = parts[-1]
-                    
-                    # Get name and call for display/log
-                    station_name = config.get('name', f"Station {station_id}")
-                    wx_call = config.get('aprs_call', APRS_CALL)
-                    
-                    obs, _ = fetch_bom_data(station_id, station_product_code)
-                    
-                    if obs is None:
-                        print(f"[Scheduler] Failed to fetch data for {station_name}")
-                        continue
-                    
-                    comment = ("%s WX" % station_name) or ("BOMWX %s" % station_id)
-                    aprs_str = bom_json_to_aprs(obs, comment=comment)
-                    
-                    if not aprs_str:
-                        print(f"[Scheduler] Failed to format APRS for {station_name}")
-                        continue
-                    
-                    # Send packet using the station's specific call sign
-                    # (The connection is logged in as global APRS_CALL)
-                    print(f"[Scheduler] Sending packet for {wx_call} ({station_name})")
-                    aprs_client.send_packet(wx_call, aprs_str)
-                    sent_count += 1
-                    time.sleep(0.5) 
-                
-                print(f"[Scheduler] Upload complete. Packets sent: {sent_count}")
-                
-            finally:
-                aprs_client.close()
-        
-        except Exception as e:
-            print(f"[Scheduler] Critical error in loop: {e}")
-        
-        time.sleep(SCHEDULE_INTERVAL_SECONDS)
 
 # --- Flask App ---
 app = Flask(__name__)
@@ -935,11 +879,6 @@ def trigger_aprs():
 
 if __name__ == '__main__':
     print("Starting BOM to APRS Web Server...")
-    
-    # Start the scheduler in a background thread
-    scheduler_thread = threading.Thread(target=upload_to_aprs, daemon=True)
-    scheduler_thread.start()
-    
     # Start the Flask web server
     print("Web server starting on port 5000...")
     app.run(host='0.0.0.0', port=5000, debug=False)
