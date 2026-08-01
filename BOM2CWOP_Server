@@ -104,14 +104,14 @@ def str_or_dots(number, length):
         return '.' * length
 
 def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=None, wind_gust=None,
-                 temperature=None, rain_since_midnight=None, humidity=None, pressure=None):
+                 temperature=None, rain_hour=None, humidity=None, pressure=None):
     return '!%s/%s_%s/%sg%st%sP%sh%sb%s%s' % (
         lat_str, lon_str,
         str_or_dots(wind_dir, 3),
         str_or_dots(wind_speed, 3),
         str_or_dots(wind_gust, 3),
         str_or_dots(temperature, 3),
-        str_or_dots(rain_since_midnight, 3),
+        str_or_dots(rain_hour, 3),
         str_or_dots(humidity, 2),
         str_or_dots(pressure, 5),
         comment
@@ -155,10 +155,7 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
     except:
         press_hpa = None
     try:
-        if 'calculated_rain_midnight' in obs:
-            rain_mm = float(obs['calculated_rain_midnight'])
-        else:
-            rain_mm = float(obs.get('rain_trace', 0.0))
+        rain_mm = float(obs.get('rain_hour', 0.0))
         rain_in = rain_mm * 0.0393700787
     except:
         rain_in = None
@@ -189,7 +186,7 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
             wind_dir = None
 
     return make_aprs_wx(lat_str, lon_str, comment=comment, temperature=temp_f, pressure=press_hpa,
-                        rain_since_midnight=rain_in, humidity=humidity, wind_speed=wind_speed,
+                        rain_hour=rain_in, humidity=humidity, wind_speed=wind_speed,
                         wind_gust=wind_gust, wind_dir=wind_dir)
 def fetch_bom_data(station_id, product_code):
     url = BOM_BASE_URL.format(product_code=product_code, station_id=station_id)
@@ -215,91 +212,8 @@ def fetch_bom_data(station_id, product_code):
             return None, None
 
         latest_obs = observations_list[0]
-        current_rain = float(latest_obs.get('rain_trace', 0.0))
         station_name = latest_obs.get('name') or latest_obs.get('station_name') or f"Station {station_id}"
         
-        # --- CALCULATE RAIN SINCE MIDNIGHT ---
-        rain_since_midnight = current_rain  # Default fallback
-        
-        current_time_str = latest_obs.get('local_date_time_full')
-        if not current_time_str or len(current_time_str) < 10:
-            latest_obs['calculated_rain_midnight'] = rain_since_midnight
-            return latest_obs, station_name
-            
-        try:
-            current_day = int(current_time_str[6:8])
-            current_hour = int(current_time_str[8:10])
-            current_year = int(current_time_str[0:4])
-        except:
-            latest_obs['calculated_rain_midnight'] = rain_since_midnight
-            return latest_obs, station_name
-
-        # Find specific historical readings for TODAY
-        obs_0000_today = None
-        obs_0900_today = None  # The reading at 09:00 (which should have the pre-reset total)
-        
-        for obs in observations_list:
-            time_str = obs.get('local_date_time_full')
-            if not time_str or len(time_str) < 10:
-                continue
-            try:
-                obs_day = int(time_str[6:8])
-                obs_hour = int(time_str[8:10])
-                obs_year = int(time_str[0:4])
-                
-                if obs_year == current_year and obs_day == current_day:
-                    if obs_hour == 0:
-                        obs_0000_today = obs
-                    elif obs_hour == 9:
-                        obs_0900_today = obs
-            except:
-                continue
-
-        if current_hour >= 9:
-            # AFTER 9am (or exactly at 9am)
-            # We need (Rain at 09:00 - Rain at 00:00) + Current Rain
-            # Note: If current_hour is 9, current_rain might be 0 (if reset happened) or the total (if 09:00 is the last entry).
-            # If 09:00 entry has a value > 0, that is the "pre-reset" total.
-            
-            if obs_0900_today and obs_0000_today:
-                try:
-                    rain_0900 = float(obs_0900_today.get('rain_trace', 0.0))
-                    rain_0000 = float(obs_0000_today.get('rain_trace', 0.0))
-                    
-                    # If the 09:00 reading is 0, it means the reset happened before this entry was saved.
-                    # In that case, we need the 08:30 reading. But based on your info, 09:00 has the value.
-                    # If rain_0900 is 0, we might need to fallback to 08:30.
-                    if rain_0900 == 0.0:
-                        # Fallback: Find 08:30
-                        for obs in observations_list:
-                            t = obs.get('local_date_time_full')
-                            if t and len(t) >= 10:
-                                h = int(t[8:10])
-                                m = int(t[10:12])
-                                if h == 8 and m == 30:
-                                    rain_0900 = float(obs.get('rain_trace', 0.0))
-                                    break
-                    
-                    rain_00_to_09 = rain_0900 - rain_0000
-                    rain_since_midnight = rain_00_to_09 + current_rain
-                except:
-                    pass
-        else:
-            # BEFORE 9am
-            # Rain Since Midnight = Current Rain - Rain at 00:00
-            if obs_0000_today:
-                try:
-                    rain_0000 = float(obs_0000_today.get('rain_trace', 0.0))
-                    rain_since_midnight = current_rain - rain_0000
-                except:
-                    pass
-        
-        # Ensure non-negative
-        if rain_since_midnight < 0:
-            rain_since_midnight = 0.0
-            
-        latest_obs['calculated_rain_midnight'] = rain_since_midnight
-
         return latest_obs, station_name
 
     except Exception as e:
@@ -428,7 +342,7 @@ def weather():
         
         # --- Rain Extraction (Safe) ---
         rain_mm_val = None
-        rain_mm_raw = obs.get('rain_trace') or obs.get('rain')
+        rain_mm_raw = obs.get('rain_hour') or obs.get('rain_trace') or obs.get('rain')
         if rain_mm_raw is not None:
             try:
                 rain_mm_val = float(rain_mm_raw)
@@ -514,29 +428,29 @@ def weather():
         if not data_found and (cloud_oktas is not None or cloud_desc):
              oktas = int(cloud_oktas) if cloud_oktas is not None else 0
              if oktas > 0:
-                 if oktas <= 1: metar_amount = "FEW"
-                 elif oktas <= 3: metar_amount = "SCT"
-                 elif oktas <= 5: metar_amount = "BKN"
-                 else: metar_amount = "OVC"
+                  if oktas <= 1: metar_amount = "FEW"
+                  elif oktas <= 3: metar_amount = "SCT"
+                  elif oktas <= 5: metar_amount = "BKN"
+                  else: metar_amount = "OVC"
              else:
-                 desc = cloud_desc.upper()
-                 if "CLEAR" in desc or "NONE" in desc: metar_amount = "SKC"
-                 elif "FEW" in desc: metar_amount = "FEW"
-                 elif "SCATTERED" in desc: metar_amount = "SCT"
-                 elif "BROKEN" in desc: metar_amount = "BKN"
-                 elif "OVERCAST" in desc or "CLOUDY" in desc: metar_amount = "OVC"
+                  desc = cloud_desc.upper()
+                  if "CLEAR" in desc or "NONE" in desc: metar_amount = "SKC"
+                  elif "FEW" in desc: metar_amount = "FEW"
+                  elif "SCATTERED" in desc: metar_amount = "SCT"
+                  elif "BROKEN" in desc: metar_amount = "BKN"
+                  elif "OVERCAST" in desc or "CLOUDY" in desc: metar_amount = "OVC"
              
-             # Try to get base from flat key if we just used oktas
-             if cloud_base_m_flat and base_ft_final == 0:
-                 try:
-                     base_ft = float(cloud_base_m_flat) * 3.28084
-                     base_ft_rounded = round(base_ft / 100) * 100
-                     if base_ft_rounded < 50: base_ft_final = 0
-                     else: base_ft_final = int(base_ft_rounded)
-                 except: pass
-            
-             if metar_amount is not None:
-                data_found = True
+              # Try to get base from flat key if we just used oktas
+              if cloud_base_m_flat and base_ft_final == 0:
+                  try:
+                      base_ft = float(cloud_base_m_flat) * 3.28084
+                      base_ft_rounded = round(base_ft / 100) * 100
+                      if base_ft_rounded < 50: base_ft_final = 0
+                      else: base_ft_final = int(base_ft_rounded)
+                  except: pass
+             
+              if metar_amount is not None:
+                 data_found = True
 
         # 4. Weather Phenomena & Forced Clouds (ONLY if NO data was found)
         # This block now runs LAST, ensuring it only overrides if BOM provided NO cloud data.
