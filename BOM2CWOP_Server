@@ -105,7 +105,7 @@ def str_or_dots(number, length):
 
 def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=None, wind_gust=None,
                  temperature=None, rain_hour=None, humidity=None, pressure=None):
-    return '!%s/%s_%s/%sg%st%sP%sh%sb%s%s' % (
+    return '!%s/%s_%s/%sg%st%sr%sh%sb%s%s' % (
         lat_str, lon_str,
         str_or_dots(wind_dir, 3),
         str_or_dots(wind_speed, 3),
@@ -342,7 +342,7 @@ def weather():
         
         # --- Rain Extraction (Safe) ---
         rain_mm_val = None
-        rain_mm_raw = obs.get('rain_hour') or obs.get('rain_trace') or obs.get('rain')
+        rain_mm_raw = obs.get('rain_hour')
         if rain_mm_raw is not None:
             try:
                 rain_mm_val = float(rain_mm_raw)
@@ -441,7 +441,7 @@ def weather():
                   elif "OVERCAST" in desc or "CLOUDY" in desc: metar_amount = "OVC"
              
               # Try to get base from flat key if we just used oktas
-              if cloud_base_m_flat and base_ft_final == 0:
+             if cloud_base_m_flat and base_ft_final == 0:
                   try:
                       base_ft = float(cloud_base_m_flat) * 3.28084
                       base_ft_rounded = round(base_ft / 100) * 100
@@ -449,7 +449,7 @@ def weather():
                       else: base_ft_final = int(base_ft_rounded)
                   except: pass
              
-              if metar_amount is not None:
+             if metar_amount is not None:
                  data_found = True
 
         # 4. Weather Phenomena & Forced Clouds (ONLY if NO data was found)
