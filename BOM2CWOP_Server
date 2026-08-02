@@ -27,6 +27,10 @@ STATION_CONFIG = {
     "IDS60910.95687": {
         "aprs_call": "YREN",
         "name": "YREN"
+    },
+    "IDV60801.94693": {
+        "aprs_call": "YMIA",
+        "name": "YMIA"
     }
 }
 
@@ -452,6 +456,116 @@ def weather():
              if metar_amount is not None:
                  data_found = True
 
+        # --- Temperature & Dew Point (Direct BOM Data) ---
+        temp_str = "///"
+        dew_str = "///"
+
+        # --- Temperature Formatting ---
+        if temp_c is not None:
+            try:
+               t = float(temp_c)
+               if t < 0:
+                  temp_str = f"M{abs(t):02.0f}"
+               else:
+                   temp_str = f"{t:02.0f}"
+            except:
+                   pass
+
+        # --- Dew Point Formatting (Direct from BOM JSON "dewpt") ---
+        # BOM provides dew point directly in Celsius
+        raw_dewpt = obs.get('dewpt')
+        if raw_dewpt is not None:
+            try:
+               dp = float(raw_dewpt)
+               if dp < 0:
+                  dew_str = f"M{abs(dp):02.0f}"
+               else:
+                   dew_str = f"{dp:02.0f}"
+            except:
+                   pass
+
+
+        # --- Pressure ---
+        qnh_str = f"Q{int(float(press_hpa))}" if press_hpa else "Q////"
+
+        # --- Wind & Gusts (Using existing variables) ---
+        wind_deg = "///"
+        wind_kt_int = None
+        gust_kt_val = None
+
+        # 2. Determine Wind Direction
+        wind_deg_val = None
+        if wind_dir_val:
+            if wind_dir_val in cardinal_lookup:
+                wind_deg_val = cardinal_lookup[wind_dir_val]
+            else:
+                try:
+                    wind_deg_val = int(float(wind_dir_val))
+                except:
+                    pass
+
+        # 3. Determine Wind Speed (KT First)
+        wind_kt_int = None
+        
+        # Try KT first
+        if wind_spd_kt is not None:
+            try:
+                wind_kt_int = int(round(float(wind_spd_kt)))
+            except:
+                pass
+        
+        # Fallback to KM/H if KT is missing
+        if wind_kt_int is None and wind_spd_kmh:
+            try:
+                wind_kt_int = int(round(float(wind_spd_kmh) / 1.852))
+            except:
+                pass
+
+        # 4. Determine Gusts (KT First)
+        gust_kt_val = None
+        
+        # Try KT first
+        if gust_kt is not None:
+            try:
+                gust_kt_val = int(round(float(gust_kt)))
+            except:
+                pass
+        
+        # Fallback to KM/H
+        if gust_kt_val is None and gust_kmh:
+            try:
+                gust_kt_val = int(round(float(gust_kmh) / 1.852))
+            except:
+                pass
+        
+        # 5. Construct Wind String
+        # METAR Rules:
+        # - Missing data: "///////"
+        # - Calm (0 kt): "00000KT"
+        # - Valid wind: "DDDSSKT" or "DDDSSGSSKT"
+        
+        if wind_kt_int is not None:
+            if wind_kt_int == 0:
+                # Calm
+                wind_str = "00000KT"
+            else:
+                if wind_deg_val is not None:
+                    # Valid direction and speed
+                    wind_deg = f"{wind_deg_val:03d}"
+                    wind_kt = f"{wind_kt_int:02d}"
+                    
+                    if gust_kt_val is not None:
+                        gust_kt = f"{gust_kt_val:02d}"
+                        wind_str = f"{wind_deg}{wind_kt}G{gust_kt}KT"
+                    else:
+                        wind_str = f"{wind_deg}{wind_kt}KT"
+                else:
+                    # Speed exists but direction is missing -> Invalid/Missing
+                    wind_str = "///////"
+        else:
+            # No speed data found -> Missing
+            wind_str = "///////"
+
         # 4. Weather Phenomena & Forced Clouds (ONLY if NO data was found)
         # This block now runs LAST, ensuring it only overrides if BOM provided NO cloud data.
         if not data_found:
@@ -526,116 +640,6 @@ def weather():
                 cloud_str = f"{metar_amount}000"
             else:
                 cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
-
-        # --- Temperature & Dew Point (Direct BOM Data) ---
-        temp_str = "///"
-        dew_str = "///"
-
-        # --- Temperature Formatting ---
-        if temp_c is not None:
-            try:
-               t = float(temp_c)
-               if t < 0:
-                  temp_str = f"M{abs(t):02.0f}"
-               else:
-                   temp_str = f"{t:02.0f}"
-            except:
-                   pass
-
-        # --- Dew Point Formatting (Direct from BOM JSON "dewpt") ---
-        # BOM provides dew point directly in Celsius
-        raw_dewpt = obs.get('dewpt')
-        if raw_dewpt is not None:
-            try:
-               dp = float(raw_dewpt)
-               if dp < 0:
-                  dew_str = f"M{abs(dp):02.0f}"
-               else:
-                   dew_str = f"{dp:02.0f}"
-            except:
-                   pass
-
-
-        # --- Pressure ---
-        qnh_str = f"Q{int(float(press_hpa))}" if press_hpa else "Q////"
-
-        # --- Wind & Gusts (Using existing variables) ---
-        wind_deg = "///"
-        wind_kt_int = None
-        gust_kt_val = None
-
-   # 2. Determine Wind Direction
-        wind_deg_val = None
-        if wind_dir_val:
-            if wind_dir_val in cardinal_lookup:
-                wind_deg_val = cardinal_lookup[wind_dir_val]
-            else:
-                try:
-                    wind_deg_val = int(float(wind_dir_val))
-                except:
-                    pass
-
-        # 3. Determine Wind Speed (KT First)
-        wind_kt_int = None
-        
-        # Try KT first
-        if wind_spd_kt is not None:
-            try:
-                wind_kt_int = int(round(float(wind_spd_kt)))
-            except:
-                pass
-        
-        # Fallback to KM/H if KT is missing
-        if wind_kt_int is None and wind_spd_kmh:
-            try:
-                wind_kt_int = int(round(float(wind_spd_kmh) / 1.852))
-            except:
-                pass
-
-        # 4. Determine Gusts (KT First)
-        gust_kt_val = None
-        
-        # Try KT first
-        if gust_kt is not None:
-            try:
-                gust_kt_val = int(round(float(gust_kt)))
-            except:
-                pass
-        
-        # Fallback to KM/H
-        if gust_kt_val is None and gust_kmh:
-            try:
-                gust_kt_val = int(round(float(gust_kmh) / 1.852))
-            except:
-                pass
-        
-        # 5. Construct Wind String
-        # METAR Rules:
-        # - Missing data: "///////"
-        # - Calm (0 kt): "00000KT"
-        # - Valid wind: "DDDSSKT" or "DDDSSGSSKT"
-        
-        if wind_kt_int is not None:
-            if wind_kt_int == 0:
-                # Calm
-                wind_str = "00000KT"
-            else:
-                if wind_deg_val is not None:
-                    # Valid direction and speed
-                    wind_deg = f"{wind_deg_val:03d}"
-                    wind_kt = f"{wind_kt_int:02d}"
-                    
-                    if gust_kt_val is not None:
-                        gust_kt = f"{gust_kt_val:02d}"
-                        wind_str = f"{wind_deg}{wind_kt}G{gust_kt}KT"
-                    else:
-                        wind_str = f"{wind_deg}{wind_kt}KT"
-                else:
-                    # Speed exists but direction is missing -> Invalid/Missing
-                    wind_str = "///////"
-        else:
-            # No speed data found -> Missing
-            wind_str = "///////"
 
         # --- Weather Phenomena ---
         weather_str = ""
