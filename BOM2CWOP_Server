@@ -342,7 +342,7 @@ def weather():
         
         # --- Rain Extraction (Safe) ---
         rain_mm_val = None
-        rain_mm_raw = obs.get('rain_hour')
+        rain_mm_raw = obs.get('rain_ten')
         if rain_mm_raw is not None:
             try:
                 rain_mm_val = float(rain_mm_raw)
@@ -467,9 +467,9 @@ def weather():
 
                     # Check Wind Speed
                     wind_low = False
-                    if wind_kt_int is not None and 1 <= wind_kt_int <= 5:
+                    if wind_kt_int is not None and 1 <= wind_kt_int <= 3:
                         wind_low = True
-                    elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
+                    elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 3:
                          wind_low = True
                     # --- Determine Saturation (Strict Logic: Both DP Spread AND High RH) ---
                     is_saturated = False
@@ -497,8 +497,8 @@ def weather():
                              is_saturated = True
 
                     # Final Fog Logic:
-                    # Must be calm, low rain, AND (saturated via dew spread OR high humidity)
-                    if is_saturated and (rain_mm_val is None or rain_mm_val < 0.5) and wind_low:
+                    # Must be low wind, (saturated via dew spread and high humidity)
+                    if is_saturated and wind_low:
                         # Force Fog conditions
                         metar_amount = "OVC"
                         base_ft_final = 100  # 100ft -> 001
@@ -510,7 +510,7 @@ def weather():
 
         # If still no data found, but it is raining significantly, force OVC
         # This is a separate check, runs if fog logic didn't set data_found=True
-        if not data_found and has_rain and rain_mm_val is not None and rain_mm_val >= 0.5:
+        if not data_found and has_rain and rain_mm_val is not None:
             metar_amount = "OVC"
             base_ft_final = 2500
             data_found = True
@@ -642,10 +642,10 @@ def weather():
 
         # Check for Rain
         if has_rain:
-            if rain_mm_val is not None and rain_mm_val >= 0.5:
+            if has_rain and rain_mm_val is not None:
                 weather_str = "RA"
 
-        # Check for Fog (High Humidity OR Low Spread, Low Rain, Calm Wind)
+        # Check for Fog (High Humidity, Low Spread, Low Wind)
         # Note: We set the CLOUDS in the previous block if data was missing.
         # Here we just set the weather string.
         if not weather_str and humidity is not None and temp_c is not None:
@@ -659,9 +659,9 @@ def weather():
         
                # Check Wind Speed
                wind_low = False
-               if wind_kt_int is not None and 1 <= wind_kt_int <= 5:
+               if wind_kt_int is not None and 1 <= wind_kt_int <= 3:
                   wind_low = True
-               elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 5:
+               elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 3:
                   wind_low = True
 
                # --- Determine Saturation (Strict Logic: Both DP Spread AND High RH) ---
@@ -690,8 +690,8 @@ def weather():
                          is_saturated = True
 
                # Final Fog Logic
-               # Conditions: Saturated (Spread < 2 OR RH > 96%) AND Low Rain AND Calm Wind
-               if is_saturated and (rain_mm_val is None or rain_mm_val < 0.5) and wind_low:
+               # Conditions: Saturated (Spread < 2, RH > 96%) Low Wind
+               if is_saturated and wind_low:
                   weather_str = "FG"
             
             except:
