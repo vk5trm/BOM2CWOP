@@ -10,7 +10,7 @@ This Flask-based server acts as a bridge between official Australian weather dat
 *   **Multi-Station Support**: Configurable to monitor multiple BOM stations simultaneously.
 *   **METAR Generator**: Exposes a web endpoint (`/weather`) that generates standard METAR format reports for human-readable viewing or integration.
 *   **APRS Integration**: Directly connects to the APRS-IS network to upload formatted weather packets.
-*   **Fog & Rain Logic**: Implements custom algorithms to detect fog conditions (based on dew point spread and humidity) and significant rainfall to enhance packet accuracy.
+*   **Fog & Rain Logic**: Implements custom algorithms to detect fog conditions (based on dew point spread and humidity and wind under 3 knots) and significant rainfall to enhance packet accuracy.
 *   **Web Interface**: Includes a simple dashboard to view active stations and trigger manual uploads.
 
 ## 📋 Prerequisites
@@ -104,11 +104,10 @@ Once running, the server exposes the following endpoints:
 ## 🧠 How It Works
 
 1.  **Data Fetching**: The server queries the BOM JSON API (`www.bom.gov.au`) for the latest observations.
-2.  **Rain Calculation**: It specifically calculates "Rain Since Midnight" by analyzing historical data points (00:00 and 09:00 timestamps) to handle daily resets in BOM data.
+2.  **Rain**: The rain is taken over the last hour for APRS and for the last 10 minutes for metadata rain detection.
 3.  **Fog Detection**: If cloud data is missing, the script infers fog conditions by checking:
-    *   Dew point spread ≤ 2°C **OR** Relative Humidity > 96%
-    *   Wind speed ≤ 5 knots
-    *   Rainfall < 0.5mm
+    *   Dew point spread ≤ 2°C **AND** Relative Humidity > 96%
+    *   Wind speed ≤ 3 knots
 4.  **APRS Formatting**: Data is converted into APRS weather packet format (`!LAT/LON_...`) and sent via TCP to the APRS-IS server.
 
 ## ⚠️ Security Note
