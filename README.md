@@ -104,7 +104,7 @@ Once running, the server exposes the following endpoints:
 ## 🧠 How It Works
 
 1.  **Data Fetching**: The server queries the BOM JSON API (`www.bom.gov.au`) for the latest observations.
-2.  **Rain**: The rain is taken over the last hour for APRS and for the last 10 minutes for metadata rain detection.
+2.  **Rain**: The rain is taken over the last hour for APRS and for the last 10 minutes for metar data rain detection.
 3.  **Fog Detection**: If cloud data is missing, the script infers fog conditions by checking:
     *   Dew point spread ≤ 2°C **AND** Relative Humidity > 96%
     *   Wind speed ≤ 3 knots
