@@ -301,8 +301,6 @@ def weather():
     """Returns Standard METAR text metadata with a Date/Time header line"""
     output_lines = []
     
-    A = 17.27
-    B = 237.7
     station_filter = request.args.get('station', '').strip().lower()
 
     # --- 1. Generate Date/Time Line (YYYY/MM/DD HH:MM) ---
@@ -594,8 +592,8 @@ def weather():
                       dew_spread = temp_val - dew_val
                       spread_condition = (dew_spread <= 2)
 
-                    # Secondary Check: Relative Humidity > 96%
-                    rh_condition = (rh_val > 96)
+                      # Secondary Check: Relative Humidity > 96%
+                      rh_condition = (rh_val > 96)
 
                     # Both conditions must be true
                     if spread_condition and rh_condition:
