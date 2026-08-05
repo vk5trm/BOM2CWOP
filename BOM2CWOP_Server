@@ -36,7 +36,7 @@ STATION_CONFIG = {
 
 # Global APRS Config (Used for Login)
 APRS_CALL = 'VK5TRM-5'    
-APRS_PASSCODE = '17072'  # ⚠️ Replace with your real passcode
+APRS_PASSCODE = '00000'  # ⚠️ Replace with your real passcode
 APRS_SERVER = 'aunz.aprs2.net'
 APRS_PORT = 14580
 
