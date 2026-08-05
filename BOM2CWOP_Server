@@ -36,7 +36,7 @@ STATION_CONFIG = {
 
 # Global APRS Config (Used for Login)
 APRS_CALL = 'VK5TRM-5'    
-APRS_PASSCODE = '00000'  # ⚠️ Replace with your real passcode
+APRS_PASSCODE = '17072'  # ⚠️ Replace with your real passcode
 APRS_SERVER = 'aunz.aprs2.net'
 APRS_PORT = 14580
 
@@ -761,12 +761,28 @@ def weather():
         metar_parts.append(f"{temp_str}/{dew_str}")
         metar_parts.append(qnh_str)
 
-        # --- Append NOSIG LAST (if applicable) ---
-        # NOSIG goes at the very end of the METAR string
-        if not is_cavok and not weather_str:
-            metar_parts.append("NOSIG")
-        
         metar_line = " ".join(metar_parts)
+
+        # --- Add RMK Section with Rainfall ---
+        # Extract 9 AM / daily rain from 'rain_trace'
+        rain_9am_val = obs.get('rain_trace')
+
+        # Calculate numeric values first to check if they are > 0
+        r10_num = float(rain_mm_val) if rain_mm_val is not None else 0.0
+        r9_num = float(rain_9am_val) if rain_9am_val is not None else 0.0
+
+        # Only add RMK if EITHER value is strictly greater than 0
+        if r10_num > 0 or r9_num > 0:
+            # Format 10-min rainfall (e.g., 00.1)
+            r10_str = f"{r10_num:03.1f}"
+            
+            # Format 9 AM / daily rainfall (e.g., 01.8)
+            r9_str = f"{r9_num:03.1f}"
+            
+            # Append RMK line: RMK RFrr.r/rrr.r
+            metar_line += f" RMK RF{r10_str}/{r9_str}"
+
+        # Append the final line to output
         output_lines.append(metar_line)
 
     if not output_lines:
