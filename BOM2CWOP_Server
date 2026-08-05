@@ -721,37 +721,55 @@ def weather():
                     pass
             # If vis_km is missing and no weather forced, keep default "9999"
 
-
-
-        # --- Station ID ---
+                # --- Station ID ---
         station_code = station_name.replace(" ", "")[:4].upper() if station_name else f"STN{station_id[-3:]}"
+
+        # --- Visibility & Cloud Logic for CAVOK ---
+        # CAVOK conditions:
+        # 1. Visibility >= 10km (9999)
+        # 2. No cloud below 5000ft (SKC)
+        # 3. No significant weather (weather_str is empty)
+        
+        is_cavok = False
+        if vis_str == "9999" and cloud_str == "SKC" and not weather_str:
+            is_cavok = True
 
         # --- Construct METAR Line ---
         metar_time = time.strftime("%d%H%MZ", time.gmtime())
-        nosig = "NOSIG" if not weather_str else ""
         
+        # Start with base components
         metar_parts = [
             station_code,
             metar_time,
-            wind_str,
-            vis_str,
-            cloud_str,
-            f"{temp_str}/{dew_str}",
-            qnh_str
+            wind_str
         ]
-        
-        if weather_str:
-            metar_parts.append(weather_str)
-        if nosig:
-            metar_parts.append(nosig)
+
+        if is_cavok:
+            # If CAVOK: Add CAVOK token
+            # Skip explicit Vis, Cloud, and Weather codes
+            metar_parts.append("CAVOK")
+        else:
+            # Standard Report: Vis -> Cloud -> Weather
+            metar_parts.append(vis_str)
+            metar_parts.append(cloud_str)
             
+            if weather_str:
+                metar_parts.append(weather_str)
+
+        # --- Always Append Temperature/Dewpoint and QNH ---
+        # These come after Vis/Cloud/Weather (or CAVOK)
+        metar_parts.append(f"{temp_str}/{dew_str}")
+        metar_parts.append(qnh_str)
+
+        # --- Append NOSIG LAST (if applicable) ---
+        # NOSIG goes at the very end of the METAR string
+        if not is_cavok and not weather_str:
+            metar_parts.append("NOSIG")
+        
         metar_line = " ".join(metar_parts)
         output_lines.append(metar_line)
 
-
     if not output_lines:
-        # If no data found, the first line (date/time) was already added
-        # We can append a message or just return the date/time
         if len(output_lines) == 1:
             output_lines.append("No data found for the specified station.")
         else:
