@@ -224,6 +224,75 @@ def fetch_bom_data(station_id, product_code):
         print(f"[Fetch] Error for {station_id}: {e}")
         return None, None
 
+
+def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt, 
+                           has_rain, rain_mm_val, vis_km):
+    """
+    Infers weather phenomena (Fog/Rain) and cloud cover when explicit data is missing.
+    Returns: (metar_amount, base_ft_final, weather_str, vis_str, data_found)
+    """
+    metar_amount = None
+    base_ft_final = 0
+    weather_str = ""
+    vis_str = "9999"  # Default
+    data_found = False
+
+    temp_val = None
+    rh_val = None
+    dew_val = None
+    is_saturated = False
+    wind_low = False
+
+    # 1. Check for Fog Conditions
+    if humidity is not None and temp_c is not None:
+        try:
+            rh_val = float(humidity)
+            temp_val = float(temp_c)
+            
+            # Retrieve dew point
+            raw_dewpt = obs.get('dewpt')
+            dew_val = float(raw_dewpt) if raw_dewpt is not None else None
+
+            # Check Wind Speed
+            if wind_kt_int is not None and 1 <= wind_kt_int <= 3:
+                wind_low = True
+            elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 3:
+                wind_low = True
+
+            # Determine Saturation
+            if dew_val is not None and rh_val is not None:
+                dew_spread = temp_val - dew_val
+                spread_condition = (dew_spread <= 2)
+                rh_condition = (rh_val > 96)
+                if spread_condition and rh_condition:
+                    is_saturated = True
+            elif dew_val is not None:
+                if (temp_val - dew_val) <= 2:
+                    is_saturated = True
+            elif rh_val is not None:
+                if rh_val > 96:
+                    is_saturated = True
+
+            # Final Fog Logic
+            if is_saturated and wind_low:
+                metar_amount = "OVC"
+                base_ft_final = 100  # 001
+                weather_str = "FG"
+                vis_str = "0000"
+                data_found = True
+        except Exception:
+            pass
+
+    # 2. Check for Rain-Induced Clouds
+    if not data_found and has_rain and rain_mm_val is not None:
+        metar_amount = "OVC"
+        base_ft_final = 2500
+        weather_str = "RA"
+        vis_str = "0500"
+        data_found = True
+
+    return metar_amount, base_ft_final, weather_str, vis_str, data_found
+
 # --- Flask App ---
 app = Flask(__name__)
 
@@ -564,150 +633,36 @@ def weather():
             # No speed data found -> Missing
             wind_str = "///////"
 
-        # 4. Weather Phenomena & Forced Clouds (ONLY if NO data was found)
-        # This block now runs LAST, ensuring it only overrides if BOM provided NO cloud data.
+        # Check if explicit cloud data was found in the previous section
         if not data_found:
-            # Check for Fog: 
-            if humidity is not None and temp_c is not None:
-                try:
-                    rh_val = float(humidity)
-                    temp_val = float(temp_c)
+            # Call the helper function to infer Fog/Rain
+            metar_amount, base_ft_final, weather_str, vis_str, data_found = _infer_missing_weather(
+                obs, humidity, temp_c, wind_kt_int, wind_spd_kt, 
+                has_rain, rain_mm_val, vis_km
+            )
 
-                    # Retrieve dew point directly from obs if available (as seen in the diff)
-                    raw_dewpt = obs.get('dewpt')
-                    dew_val = float(raw_dewpt) if raw_dewpt is not None else None
-
-                    # Check Wind Speed
-                    wind_low = False
-                    if wind_kt_int is not None and 1 <= wind_kt_int <= 3:
-                        wind_low = True
-                    elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 3:
-                         wind_low = True
-                    # --- Determine Saturation (Strict Logic: Both DP Spread AND High RH) ---
-                    is_saturated = False
-
-                    # Only calculate if we have valid temperature and humidity data
-                    if dew_val is not None and rh_val is not None:
-                      # Primary Check: Temperature - Dewpoint <= 2°C
-                      dew_spread = temp_val - dew_val
-                      spread_condition = (dew_spread <= 2)
-
-                      # Secondary Check: Relative Humidity > 96%
-                      rh_condition = (rh_val > 96)
-
-                    # Both conditions must be true
-                    if spread_condition and rh_condition:
-                        is_saturated = True
-                    elif dew_val is not None:
-                    # Fallback: If RH data is missing, rely solely on DP spread
-                       dew_spread = temp_val - dew_val
-                       if dew_spread <= 2:
-                           is_saturated = True
-                       elif rh_val is not None:
-                       # Fallback: If DP data is missing, rely solely on RH
-                          if rh_val > 96:
-                             is_saturated = True
-
-                    # Final Fog Logic:
-                    # Must be low wind, (saturated via dew spread and high humidity)
-                    if is_saturated and wind_low:
-                        # Force Fog conditions
-                        metar_amount = "OVC"
-                        base_ft_final = 100  # 100ft -> 001
-                        data_found = True
-                        # Note: weather_str will be set to "FG" in the Weather Phenomena section below
-                    
-                except Exception:
-                    pass
-
-        # If still no data found, but it is raining significantly, force OVC
-        # This is a separate check, runs if fog logic didn't set data_found=True
-        if not data_found and has_rain and rain_mm_val is not None:
-            metar_amount = "OVC"
-            base_ft_final = 2500
-            data_found = True
-            # Note: weather_str will be set to "RA" in the Weather Phenomena section below
-
-        # 5. Construct Cloud String
-        if not data_found:
-            cloud_str = "///"
-        elif metar_amount == "SKC":
-            cloud_str = "SKC"
-        else:
-            if base_ft_final == 0:
-                cloud_str = f"{metar_amount}000"
+            # Construct Cloud String based on inference result
+            if data_found:
+                if base_ft_final == 0:
+                    cloud_str = f"{metar_amount}000"
+                else:
+                    cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
             else:
-                cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
-
-        # --- Weather Phenomena ---
-        weather_str = ""
-
-        # Check for Rain
-        if has_rain:
-            if has_rain and rain_mm_val is not None:
-                weather_str = "RA"
-
-        # Check for Fog (High Humidity, Low Spread, Low Wind)
-        # Note: We set the CLOUDS in the previous block if data was missing.
-        # Here we just set the weather string.
-        if not weather_str and humidity is not None and temp_c is not None:
-            try:
-               rh_val = float(humidity)
-               temp_val = float(temp_c)
-        
-               # Retrieve dew point
-               raw_dewpt = obs.get('dewpt')
-               dew_val = float(raw_dewpt) if raw_dewpt is not None else None
-        
-               # Check Wind Speed
-               wind_low = False
-               if wind_kt_int is not None and 1 <= wind_kt_int <= 3:
-                  wind_low = True
-               elif wind_spd_kt is not None and 1 <= float(wind_spd_kt) <= 3:
-                  wind_low = True
-
-               # --- Determine Saturation (Strict Logic: Both DP Spread AND High RH) ---
-               is_saturated = False
-
-               # Only calculate if we have valid temperature and humidity data
-               if dew_val is not None and rh_val is not None:
-                   # Primary Check: Temperature - Dewpoint <= 2°C
-                   dew_spread = temp_val - dew_val
-                   spread_condition = (dew_spread <= 2)
-    
-                   # Secondary Check: Relative Humidity > 96%
-                   rh_condition = (rh_val > 96)
-    
-                   # Both conditions must be true
-                   if spread_condition and rh_condition:
-                       is_saturated = True
-               elif dew_val is not None:
-               # Fallback: If RH data is missing, rely solely on DP spread
-                     dew_spread = temp_val - dew_val
-                     if dew_spread <= 2:
-                         is_saturated = True
-               elif rh_val is not None:
-               # Fallback: If DP data is missing, rely solely on RH
-                      if rh_val > 96:
-                         is_saturated = True
-
-               # Final Fog Logic
-               # Conditions: Saturated (Spread < 2, RH > 96%) Low Wind
-               if is_saturated and wind_low:
-                  weather_str = "FG"
-            
-            except:
-                pass
-               # --- Visibility ---
-        vis_str = "9999"  # Default to good visibility
-        
-        # If we already determined the weather phenomenon (FG or RA), force visibility
-        if weather_str == "FG":
-            vis_str = "0000"  # Fog implies near-zero visibility
-        elif weather_str == "RA":
-            vis_str = "0500"  # Rain implies reduced visibility (500m)
+                # Still no data found
+                cloud_str = "///"
         else:
-            # Otherwise, calculate from BOM data
+            # Explicit data was found, construct cloud string normally
+            if metar_amount == "SKC":
+                cloud_str = "SKC"
+            else:
+                if base_ft_final == 0:
+                    cloud_str = f"{metar_amount}000"
+                else:
+                    cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
+
+        # --- 5. Visibility Logic (UPDATED) ---
+        # If we didn't infer weather (no Fog/Rain), check BOM visibility data
+        if not data_found:
             if vis_km:
                 try:
                     vis_val = float(vis_km)
@@ -719,7 +674,7 @@ def weather():
                         vis_str = f"{int(vis_val * 1000):04d}"
                 except:
                     pass
-            # If vis_km is missing and no weather forced, keep default "9999"
+    # If vis_km is missing and no weather forced, keep default "9999"
 
                 # --- Station ID ---
         station_code = station_name.replace(" ", "")[:4].upper() if station_name else f"STN{station_id[-3:]}"
