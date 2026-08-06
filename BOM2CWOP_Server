@@ -774,10 +774,10 @@ def weather():
         # Only add RMK if EITHER value is strictly greater than 0
         if r10_num > 0 or r9_num > 0:
             # Format 10-min rainfall (e.g., 00.1)
-            r10_str = f"{r10_num:03.1f}"
+            r10_str = f"{r10_num:04.1f}"
             
-            # Format 9 AM / daily rainfall (e.g., 01.8)
-            r9_str = f"{r9_num:03.1f}"
+            # Format 9 AM / daily rainfall (e.g., 001.8)
+            r9_str = f"{r9_num:05.1f}"
             
             # Append RMK line: RMK RFrr.r/rrr.r
             metar_line += f" RMK RF{r10_str}/{r9_str}"
