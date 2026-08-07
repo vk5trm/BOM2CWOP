@@ -35,18 +35,21 @@ APRS_PORT = 14580               # APRS-IS port
 
 ### 2. Station Configuration
 Define which BOM stations you want to monitor in the `STATION_CONFIG` dictionary.
+
 *Format:* "ProductCode.StationID": { "aprs_call": "CALLSIGN", "name": "Friendly Name" }
+
 The 'aprs_call' here is for display/menu reference, but the UPLOAD uses the global APRS_CALL
 
-Use these product codes for each state in Australia
-IDN60910      New South Wales and Australian Capital Territory
-IDV60910      Victoria
-IDQ60910      Queensland
-IDS60910      South Australia
-IDW60910      Western Australia
-IDT60910      Tasmania
-IDD60910      Northern Territory
-
+**Use these product codes for each state in Australia**
+```Bash
+  IDN60910      New South Wales and Australian Capital Territory
+  IDV60910      Victoria
+  IDQ60910      Queensland
+  IDS60910      South Australia
+  IDW60910      Western Australia
+  IDT60910      Tasmania
+  IDD60910      Northern Territory
+```
 How to find your Station ID:
 1. Visit the BOM Weather Data website.
 2. Search for your local weather station by clicking on you state then click on "Latest Observations"
