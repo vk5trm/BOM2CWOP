@@ -35,6 +35,26 @@ APRS_PORT = 14580               # APRS-IS port
 
 ### 2. Station Configuration
 Define which BOM stations you want to monitor in the `STATION_CONFIG` dictionary.
+*Format:* "ProductCode.StationID": { "aprs_call": "CALLSIGN", "name": "Friendly Name" }
+The 'aprs_call' here is for display/menu reference, but the UPLOAD uses the global APRS_CALL
+
+Use these product codes for each state in Australia
+IDN60910      New South Wales and Australian Capital Territory
+IDV60910      Victoria
+IDQ60910      Queensland
+IDS60910      South Australia
+IDW60910      Western Australia
+IDT60910      Tasmania
+IDD60910      Northern Territory
+
+How to find your Station ID:
+1. Visit the BOM Weather Data website.
+2. Search for your local weather station by clicking on you state then click on "Latest Observations"
+3. Go though the list and find the town/city you are interested in and click on the name.
+4. look at the URL of the page and  Note the last numeric ID between the 2 dots (.NNNNN.shtml) in the URL
+    (ie https://www.bom.gov.au/fwo/IDS60910/IDS60910.95687.shtml) would be STATION_ID=95687
+5. Enter this ID for the StationID
+
 ```python
 STATION_CONFIG = {
     "IDS60910.94682": {
@@ -47,7 +67,6 @@ STATION_CONFIG = {
     }
 }
 ```
-*Format:* `"ProductCode.StationID": { "aprs_call": "DISPLAY_CALL", "name": "Friendly Name" }`
 
 ## 🛠️ Installation & Run
 
