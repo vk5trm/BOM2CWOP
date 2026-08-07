@@ -31,7 +31,7 @@ from flask import Flask, jsonify, render_template_string, Response, request
 #
 # How to find your Station ID:
 # 1. Visit the BOM Weather Data website.
-# 2. Search for your local weather station by clicking on your state then click on "Latest Observations"
+# 2. Search for your local weather station by clicking on you state then click on "Latest Observations"
 # 3. Go though the list and find the town/city you are interested in and click on the name.
 # 4. look at the URL of the page and  Note the last numeric ID between the 2 dots (.NNNNN.shtml) in the URL
 #     (ie https://www.bom.gov.au/fwo/IDS60910/IDS60910.95687.shtml) would be StationID=95687 
@@ -178,7 +178,7 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
         press_hpa = None
     try:
         rain_mm = float(obs.get('rain_hour', 0.0))
-        rain_in = rain_mm * 0.0393700787
+        rain_in = rain_mm * 3.93700787
     except:
         rain_in = None
     try:
@@ -293,7 +293,7 @@ def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt,
 
             # Final Fog Logic
             if is_saturated and wind_low:
-                metar_amount = "OVC"
+                metar_amount = "VV"
                 base_ft_final = 100  # 001
                 weather_str = "FG"
                 vis_str = "0000"
@@ -457,7 +457,8 @@ def weather():
         metar_amount = None
         base_ft_final = 0
         data_found = False
-
+        vis_str = "9999" 
+        weather_str = ""
         # 1. Try Flat Key First (Most Reliable)
         if cloud_base_m_flat is not None:
             try:
