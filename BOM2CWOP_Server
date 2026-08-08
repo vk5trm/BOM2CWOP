@@ -437,8 +437,8 @@ def weather():
                 rain_mm_val = float(rain_mm_raw)
             except:
                 rain_mm_val = None
-        
-        has_rain = rain_mm_val is not None and rain_mm_val > 0
+        explicit_rain = obs.get('weather') == "Rain"
+        has_rain = explicit_rain or (rain_mm_val is not None and rain_mm_val > 0)
 
         # --- Wind Extraction ---
         wind_dir_val = obs.get('wind_dir')
@@ -652,6 +652,11 @@ def weather():
             # No speed data found -> Missing
             wind_str = "///////"
 
+        if has_rain and weather_str == "":
+            weather_str = "RA"
+            # Optional: Lower visibility if raining and no explicit vis data
+            if vis_str == "9999" and vis_km is None:
+                vis_str = "0500"
         # Check if explicit cloud data was found in the previous section
         if not data_found:
             # Call the helper function to infer Fog/Rain
