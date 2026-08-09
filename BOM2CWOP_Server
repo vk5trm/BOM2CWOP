@@ -310,7 +310,7 @@ def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt,
                 vis_str = "2500"   # Light
                 base_ft_final = 1500 
             else:
-                vis_str = "5000"   # Fallback for very tiny amounts if not data_found and has_rain and rain_mm_val is not None:
+                vis_str = "5000"   # Fallback for very tiny amounts
                 base_ft_final = 2500
             metar_amount = "OVC"
             data_found = True
@@ -629,7 +629,7 @@ def weather():
                 elif rain_mm_val >= 0.1:
                     weather_str = "-RA"   # Light
                 else:
-                    weather_str = "BR"    # Mist for very tiny amounts
+                    weather_str = "DZ"    # Drizzle for very tiny amounts
 
         # Check if explicit cloud data was found in the previous section
         if not data_found:
