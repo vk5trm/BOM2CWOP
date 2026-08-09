@@ -298,19 +298,22 @@ def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt,
             pass
 
     # 2. Check for Rain-Induced Clouds
-    if not data_found and has_rain and rain_mm_val is not None:
+    if not data_found and has_rain:
         if vis_str == "9999":
             if rain_mm_val >= 5.0:
                 vis_str = "0500"   # Heavy
+                base_ft_final = 500 
             elif rain_mm_val >= 1.0:
                 vis_str = "1000"   # Moderate
+                base_ft_final = 1000 
             elif rain_mm_val >= 0.1:
                 vis_str = "2500"   # Light
+                base_ft_final = 1500 
             else:
                 vis_str = "5000"   # Fallback for very tiny amounts if not data_found and has_rain and rain_mm_val is not None:
-    metar_amount = "OVC"
-    base_ft_final = 2500
-    data_found = True
+                base_ft_final = 2500
+            metar_amount = "OVC"
+            data_found = True
 
     return metar_amount, base_ft_final, weather_str, vis_str, data_found
 
