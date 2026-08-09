@@ -540,7 +540,7 @@ def weather():
 
 
         # --- Pressure ---
-        qnh_str = f"Q{int(float(press_hpa))}" if press_hpa else "Q////"
+        qnh_str = f"Q{int(float(press_hpa)):04}" if press_hpa else "Q////"
 
         # --- Wind & Gusts (Using existing variables) ---
         wind_deg = "///"
