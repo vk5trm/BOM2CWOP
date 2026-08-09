@@ -250,7 +250,7 @@ def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt,
     weather_str = ""
     vis_str = "9999"  # Default
     data_found = False
-
+    weather_str = current_weather_str
     temp_val = None
     rh_val = None
     dew_val = None
@@ -258,6 +258,8 @@ def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt,
     wind_low = False
 
     # 1. Check for Fog Conditions
+    if weather_str:
+        pass  # We'll still check for Fog below, but won't overwrite rain if Fog isn't found
     if humidity is not None and temp_c is not None:
         try:
             rh_val = float(humidity)
@@ -443,7 +445,8 @@ def weather():
                 rain_mm_val = float(rain_mm_raw)
             except:
                 rain_mm_val = None
-        explicit_rain = obs.get('weather') == "Rain"
+        weather_desc = obs.get('weather') or ""
+        explicit_rain = "rain" in weather_desc.lower()
         has_rain = explicit_rain or (rain_mm_val is not None and rain_mm_val > 0)
 
         # --- Wind Extraction ---
