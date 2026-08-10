@@ -436,7 +436,7 @@ def weather():
         humidity = obs.get('rel_hum')
         press_hpa = obs.get('press')
         vis_km = obs.get('vis_km') or obs.get('vis') or obs.get('visibility')
-        
+
         # --- Rain Extraction (Safe) ---
         rain_mm_val = None
         rain_mm_raw = obs.get('rain_ten')
@@ -447,8 +447,14 @@ def weather():
                 rain_mm_val = None
         weather_desc = obs.get('weather') or ""
         weather_lower = weather_desc.lower()
-        explicit_rain = any(word in weather_lower for word in ("rain", "shower", "showers"))
-        has_rain = explicit_rain or (rain_mm_val is not None and rain_mm_val > 0)
+
+        # Separate checks for Rain vs Showers
+        is_rain = any(word in weather_lower for word in ("rain",))
+        is_shower = any(word in weather_lower for word in ("shower", "showers"))
+        is_thunderstorm = any(word in weather_lower for word in ("thunder",))
+
+        # has_rain remains true if EITHER is present (or if numeric rain exists)
+        has_rain = is_rain or is_shower or (rain_mm_val is not None and rain_mm_val > 0)
 
         # --- Wind Extraction ---
         wind_dir_val = obs.get('wind_dir')
@@ -624,17 +630,40 @@ def weather():
             # No speed data found -> Missing
             wind_str = "///////"
 
-        if has_rain and weather_str == "":
-            if rain_mm_val is not None:
-                if rain_mm_val >= 5.0:
-                    weather_str = "+RA"   # Heavy
-                elif rain_mm_val >= 1.0:
-                    weather_str = "RA"    # Moderate
-                elif rain_mm_val >= 0.1:
-                    weather_str = "-RA"   # Light
+            # Weather strings
+            if has_rain and weather_str == "":
+              if rain_mm_val is not None:
+                 # Determine intensity first
+                 if rain_mm_val >= 5.0:
+                     intensity = "+"
+                 elif rain_mm_val >= 1.0:
+                     intensity = ""
+                 elif rain_mm_val >= 0.1:
+                     intensity = "-"
+                 else:
+                     intensity = "" # Default for very light
+                
+                # Determine type: Showers take precedence if detected
+                 if is_shower:
+                     weather_str = f"{intensity}SHRA"
+                 elif is_rain:
+                     weather_str = f"{intensity}RA"
+                 elif is_thunderstorm:
+                  weather_str = f"{intensity}TSRA"
+                 else:
+                     weather_str = "DZ" # Fallback if numeric rain exists but text says otherwise
+            else:
+                # If no numeric rain, rely on text description
+                if is_shower:
+                    weather_str = "SHRA" # Default light shower
+                elif is_rain:
+                    weather_str = "RA"   # Default light rain
+                elif is_thunderstorm:
+                    weather_str = "TSRA" # Default Thunderstorm 
                 else:
                     weather_str = "DZ"    # Drizzle for very tiny amounts
 
+        # Infer weather if data is missing 
         # Check if explicit cloud data was found in the previous section
         if not data_found:
             # Call the helper function to infer Fog/Rain
