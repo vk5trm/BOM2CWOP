@@ -446,7 +446,8 @@ def weather():
             except:
                 rain_mm_val = None
         weather_desc = obs.get('weather') or ""
-        explicit_rain = "rain" in weather_desc.lower()
+        weather_lower = weather_desc.lower()
+        explicit_rain = any(word in weather_lower for word in ("rain", "shower", "showers"))
         has_rain = explicit_rain or (rain_mm_val is not None and rain_mm_val > 0)
 
         # --- Wind Extraction ---
