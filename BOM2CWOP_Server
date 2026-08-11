@@ -454,7 +454,7 @@ def weather():
         is_thunderstorm = any(word in weather_lower for word in ("thunder",))
 
         # has_rain remains true if EITHER is present (or if numeric rain exists)
-        has_rain = is_rain or is_shower or (rain_mm_val is not None and rain_mm_val > 0)
+        has_rain = is_rain or is_shower or is_thunderstorm or (rain_mm_val is not None and rain_mm_val > 0)
 
         # --- Wind Extraction ---
         wind_dir_val = obs.get('wind_dir')
