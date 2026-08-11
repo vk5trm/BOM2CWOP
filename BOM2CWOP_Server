@@ -38,17 +38,17 @@ from flask import Flask, jsonify, render_template_string, Response, request
 # 5. Enter this ID for the StationID
 #
 STATION_CONFIG = {
-    "IDS60910.94682": {
-        "aprs_call": "YLOX",
-        "name": "YLOX"
+    "IDS60910.94682": {      # Product code.StationID
+        "aprs_call": "YLOX", # APRS callsign to use for weather station
+        "ICAO": "YLOX"       # ICAO code for the nearest airport Must be 4 letters
     },
-    "IDS60910.95687": {
-        "aprs_call": "YREN",
-        "name": "YREN"
+    "IDS60910.95687": {      # Product code.StationID
+        "aprs_call": "YREN", # APRS callsign to use for weather station
+        "ICAO": "YREN"       # ICAO code for the nearest airport Must be 4 letters
     },
-    "IDV60910.94693": {
-        "aprs_call": "YMIA",
-        "name": "YMIA"
+    "IDV60910.94693": {      # Product code.StationID
+        "aprs_call": "YMIA", # APRS callsign to use for weather station
+        "ICAO": "YMIA"       # ICAO code for the nearest airport Must be 4 letters
     }
 }
 
@@ -356,7 +356,7 @@ HTML_PAGE = """
 
 # Dynamically build the list using names from STATION_CONFIG
 for full_id, config in STATION_CONFIG.items():
-    display_name = config.get('name', f"Station {full_id.split('.')[-1]}")
+    display_name = config.get('ICAO', f"Station {full_id.split('.')[-1]}")
     
     # Extract Product Code and Station ID from the full_id (e.g., "IDS60910.94682")
     parts = full_id.split('.')
@@ -415,7 +415,7 @@ def weather():
         station_product_code = parts[0]
         station_id = parts[-1]
         
-        station_name = config.get('name', f"Station {station_id}")
+        station_name = config.get('ICAO', f"Station {station_id}")
         
         # Filter Logic
         if station_filter:
@@ -793,7 +793,7 @@ def trigger_aprs():
             station_id = parts[-1]
             
             wx_call = config.get('aprs_call', APRS_CALL)
-            station_name = config.get('name', f"Station {station_id}")
+            station_name = config.get('ICAO', f"Station {station_id}")
             
             obs, _ = fetch_bom_data(station_id, station_product_code)
             if obs is None:
