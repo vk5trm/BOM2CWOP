@@ -198,18 +198,39 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
     except:
         wind_gust = None
 
-    wind_dir_value = obs.get('wind_dir')
-    if wind_dir_value in cardinal_lookup:
-        wind_dir = cardinal_lookup[wind_dir_value]
-    else:
+    # Extract the relevant values from the BOM JSON data
+    wind_deg_val = None
+    wind_dir = None
+    wind_dir_deg_val = None
+    wind_dir_val = obs.get('wind_dir', None)         # e.g., "WNW"
+    wind_dir_deg_val = obs.get('wind_dir_deg', None) # e.g., 296
+
+    # First, try to use the numeric wind direction from the BOM JSON
+    if wind_dir_deg_val is not None:
         try:
-            wind_dir = int(float(wind_dir_value))
-        except:
-            wind_dir = None
+            wind_deg_val = int(float(wind_dir_deg_val))
+            # Validate it's within 0-359 degrees (optional, but good practice)
+            if wind_deg_val < 0 or wind_deg_val > 359:
+                wind_deg_val = None
+        except (ValueError, TypeError):
+            wind_deg_val = None
+
+    # If numeric direction is missing or invalid, fall back to cardinal direction
+    if wind_deg_val is None and wind_dir_val:
+        if wind_dir_val in cardinal_lookup:
+            wind_deg_val = cardinal_lookup[wind_dir_val]
+        else:
+            # If it's a string that might be a number (e.g., "296"), try parsing it
+            try:
+                wind_deg_val = int(float(wind_dir_val))
+                if wind_deg_val < 0 or wind_deg_val > 359:
+                    wind_deg_val = None
+            except (ValueError, TypeError):
+                wind_deg_val = None
 
     return make_aprs_wx(lat_str, lon_str, comment=comment, temperature=temp_f, pressure=press_hpa,
                         rain_hour=rain_in, humidity=humidity, wind_speed=wind_speed,
-                        wind_gust=wind_gust, wind_dir=wind_dir)
+                        wind_gust=wind_gust, wind_dir=wind_deg_val)
 def fetch_bom_data(station_id, product_code):
     url = BOM_BASE_URL.format(product_code=product_code, station_id=station_id)
     try:
@@ -456,8 +477,7 @@ def weather():
         # has_rain remains true if EITHER is present (or if numeric rain exists)
         has_rain = is_rain or is_shower or is_thunderstorm or (rain_mm_val is not None and rain_mm_val > 0)
 
-        # --- Wind Extraction ---
-        wind_dir_val = obs.get('wind_dir')
+        # --- Wind Speed Extraction ---
         wind_spd_kmh = obs.get('wind_spd_kmh')
         wind_spd_kt = obs.get('wind_spd_kt')
         gust_kmh = obs.get('gust_kmh')
@@ -557,16 +577,34 @@ def weather():
         wind_kt_int = None
         gust_kt_val = None
 
+        # Extract the relevant values from the BOM JSON data
+        wind_dir_val = obs.get('wind_dir', None)         # e.g., "WNW"
+        wind_dir_deg_val = obs.get('wind_dir_deg', None) # e.g., 296
         # 2. Determine Wind Direction
         wind_deg_val = None
-        if wind_dir_val:
+
+        # First, try to use the numeric wind direction from the BOM JSON
+        if wind_dir_deg_val is not None:
+            try:
+                wind_deg_val = int(float(wind_dir_deg_val))
+                # Validate it's within 0-359 degrees (optional, but good practice)
+                if wind_deg_val < 0 or wind_deg_val > 359:
+                    wind_deg_val = None
+            except (ValueError, TypeError):
+                wind_deg_val = None
+
+        # If numeric direction is missing or invalid, fall back to cardinal direction
+        if wind_deg_val is None and wind_dir_val:
             if wind_dir_val in cardinal_lookup:
                 wind_deg_val = cardinal_lookup[wind_dir_val]
             else:
+                # If it's a string that might be a number (e.g., "296"), try parsing it
                 try:
                     wind_deg_val = int(float(wind_dir_val))
-                except:
-                    pass
+                    if wind_deg_val < 0 or wind_deg_val > 359:
+                        wind_deg_val = None
+                except (ValueError, TypeError):
+                    wind_deg_val = None
 
         # 3. Determine Wind Speed (KT First)
         wind_kt_int = None
