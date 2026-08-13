@@ -38,22 +38,22 @@ from flask import Flask, jsonify, render_template_string, Response, request
 # 5. Enter this ID for the StationID
 #
 STATION_CONFIG = {
-    "IDS60910.94682": {      # Product code.StationID
-        "aprs_call": "YLOX", # APRS callsign to use for weather station
-        "ICAO": "YLOX"       # ICAO code for the nearest airport Must be 4 letters
+    "IDS60910.94682": {                # Product code.StationID
+        "aprs_call": "VK5TRM-13",      # APRS callsign to use for weather station
+        "ICAO": "YLOX"                 # ICAO code for the nearest airport Must be 4 letters
     },
-    "IDS60910.95687": {      # Product code.StationID
-        "aprs_call": "YREN", # APRS callsign to use for weather station
-        "ICAO": "YREN"       # ICAO code for the nearest airport Must be 4 letters
+    "IDS60910.95687": {                # Product code.StationID
+        "aprs_call": "YREN",           # APRS callsign to use for weather station
+        "ICAO": "YREN"                 # ICAO code for the nearest airport Must be 4 letters
     },
-    "IDV60910.94693": {      # Product code.StationID
-        "aprs_call": "YMIA", # APRS callsign to use for weather station
-        "ICAO": "YMIA"       # ICAO code for the nearest airport Must be 4 letters
+    "IDV60910.94693": {                # Product code.StationID
+        "aprs_call": "YMIA",           # APRS callsign to use for weather station
+        "ICAO": "YMIA"                 # ICAO code for the nearest airport Must be 4 letters
     }
 }
 
 # Global APRS Config (Used for Login)
-APRS_CALL = 'VK5TRM-5'    
+APRS_CALL = 'VK5TRM-13'
 APRS_PASSCODE = '00000'  # ⚠️ Replace with your real passcode
 APRS_SERVER = 'aunz.aprs2.net'
 APRS_PORT = 14580
@@ -144,7 +144,7 @@ cardinal_lookup = {
     'S': 180, 'SSW': 202, 'SW': 225, 'WSW': 247, 'W': 270, 'WNW': 292, 'NW': 315, 'NNW': 337, 'CALM': 0
 }
 
-def bom_json_to_aprs(obs, comment="BOMWX"):
+def bom_json_to_aprs(obs, comment="BOMWX", station_name=None):
     if obs is None:
         return None
 
@@ -228,9 +228,13 @@ def bom_json_to_aprs(obs, comment="BOMWX"):
             except (ValueError, TypeError):
                 wind_deg_val = None
 
+    if station_name:
+        comment = f"{station_name} WX"
+    
     return make_aprs_wx(lat_str, lon_str, comment=comment, temperature=temp_f, pressure=press_hpa,
                         rain_hour=rain_in, humidity=humidity, wind_speed=wind_speed,
                         wind_gust=wind_gust, wind_dir=wind_deg_val)
+  
 def fetch_bom_data(station_id, product_code):
     url = BOM_BASE_URL.format(product_code=product_code, station_id=station_id)
     try:
@@ -846,12 +850,12 @@ def trigger_aprs():
             wx_call = config.get('aprs_call', APRS_CALL)
             station_name = config.get('ICAO', f"Station {station_id}")
             
-            obs, _ = fetch_bom_data(station_id, station_product_code)
+            obs, raw_station_name = fetch_bom_data(station_id, station_product_code)
             if obs is None:
                 continue
-            
-            comment = ("%s WX" % station_name) or ("BOMWX %s" % station_id)
-            aprs_str = bom_json_to_aprs(obs, comment=comment)
+    
+            # Pass the raw station name from the JSON to the function
+            aprs_str = bom_json_to_aprs(obs, station_name=raw_station_name)
             if not aprs_str:
                 continue
             
