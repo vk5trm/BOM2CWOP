@@ -787,24 +787,37 @@ def weather():
 
         metar_line = " ".join(metar_parts)
 
-        # --- Add RMK Section with Rainfall ---
-        # Extract 9 AM / daily rain from 'rain_trace'
-        rain_9am_val = obs.get('rain_trace')
-
-        # Calculate numeric values first to check if they are > 0
-        r10_num = float(rain_mm_val) if rain_mm_val is not None else 0.0
-        r9_num = float(rain_9am_val) if rain_9am_val is not None else 0.0
+        # --- Add RMK Section with Rainfall (Standard Format) ---
+        # Uses BOM 'rain_hour' for 1-hour precipitation (P code)
+        # Uses BOM 'rain_trace' (9 AM) for 24-hour precipitation (7 code)
+        # Converts mm to inches for regex patterns (e.g., P0010)
+        
+        r1h_mm = float(obs.get('rain_hour', 0)) if obs.get('rain_hour') is not None else 0.0
+        r24h_mm = float(obs.get('rain_trace', 0)) if obs.get('rain_trace') is not None else 0.0
 
         # Only add RMK if EITHER value is strictly greater than 0
-        if r10_num > 0 or r9_num > 0:
-            # Format 10-min rainfall (e.g., 00.1)
-            r10_str = f"{r10_num:04.1f}"
+        if r1h_mm > 0 or r24h_mm > 0:
+            # Convert mm to inches (1 mm = 0.0393701 inches)
+            r1h_in = r1h_mm * 0.0393701
+            r24h_in = r24h_mm * 0.0393701
             
-            # Format 9 AM / daily rainfall (e.g., 001.8)
-            r9_str = f"{r9_num:05.1f}"
+            remark_parts = []
             
-            # Append RMK line: RMK RFrr.r/rrr.r
-            metar_line += f" RMK RF{r10_str}/{r9_str}"
+            # 1. 1-hour rain -> P code (Standard METAR: Pxxxx = Precipitation in last hour)
+            if r1h_in > 0:
+                val = round(r1h_in, 2)
+                # Format to string with 2 decimals, remove dot, pad to 4 chars
+                digits = f"{val:.2f}".replace('.', '').ljust(4, '0')[:4]
+                remark_parts.append(f"P{digits}")
+            
+            # 2. 24-hour (9 AM) rain -> 7 code (Standard METAR: 7xxxx = Precipitation in last 24 hours)
+            if r24h_in > 0:
+                val = round(r24h_in, 2)
+                digits = f"{val:.2f}".replace('.', '').ljust(4, '0')[:4]
+                remark_parts.append(f"7{digits}")
+            
+            if remark_parts:
+                metar_line += " RMK " + " ".join(remark_parts)
 
         # Append the final line to output
         output_lines.append(metar_line)
