@@ -729,7 +729,7 @@ def weather():
                     cloud_str = f"{metar_amount}{int(base_ft_final/100):03d}"
             else:
                 # Still no data found
-                cloud_str = "///"
+                cloud_str = "SKC"
         else:
             # Explicit data was found, construct cloud string normally
             if metar_amount == "SKC":
