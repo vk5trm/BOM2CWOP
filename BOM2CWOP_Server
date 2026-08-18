@@ -471,7 +471,7 @@ def weather():
 
         # --- Rain Extraction (Safe) ---
         rain_mm_val = None
-        rain_mm_raw = obs.get('rain_ten')
+        rain_mm_raw = obs.get('rain_hour')
         if rain_mm_raw is not None:
             try:
                 rain_mm_val = float(rain_mm_raw)
@@ -487,7 +487,7 @@ def weather():
 
         # has_rain remains true if EITHER is present (or if numeric rain exists)
         has_rain = is_rain or is_shower or is_thunderstorm or (rain_mm_val is not None and rain_mm_val > 0)
-
+        
         # --- Wind Speed Extraction ---
         wind_spd_kmh = obs.get('wind_spd_kmh')
         wind_spd_kt = obs.get('wind_spd_kt')
@@ -679,38 +679,38 @@ def weather():
             # No speed data found -> Missing
             wind_str = "///////"
 
-            # Weather strings
-            if has_rain and weather_str == "":
-              if rain_mm_val is not None:
-                 # Determine intensity first
-                 if rain_mm_val >= 5.0:
-                     intensity = "+"
-                 elif rain_mm_val >= 1.0:
-                     intensity = ""
-                 elif rain_mm_val >= 0.1:
-                     intensity = "-"
-                 else:
-                     intensity = "" # Default for very light
+        # Weather strings
+        if has_rain and weather_str == "":
+           if rain_mm_val is not None:
+              # Determine intensity first
+              if rain_mm_val >= 5.0:
+                  intensity = "+"
+              elif rain_mm_val >= 1.0:
+                  intensity = ""
+              elif rain_mm_val >= 0.1:
+                  intensity = "-"
+              else:
+                  intensity = "" # Default for very light
                 
-                # Determine type: Showers take precedence if detected
-                 if is_shower:
-                     weather_str = f"{intensity}SHRA"
-                 elif is_rain:
-                     weather_str = f"{intensity}RA"
-                 elif is_thunderstorm:
+              # Determine type: Showers take precedence if detected
+              if is_shower:
+                  weather_str = f"{intensity}SHRA"
+              elif is_rain:
+                  weather_str = f"{intensity}RA"
+              elif is_thunderstorm:
                   weather_str = f"{intensity}TSRA"
-                 else:
-                     weather_str = "DZ" # Fallback if numeric rain exists but text says otherwise
-            else:
-                # If no numeric rain, rely on text description
-                if is_shower:
-                    weather_str = "SHRA" # Default light shower
-                elif is_rain:
-                    weather_str = "RA"   # Default light rain
-                elif is_thunderstorm:
-                    weather_str = "TSRA" # Default Thunderstorm 
-                else:
-                    weather_str = "DZ"    # Drizzle for very tiny amounts
+              else:
+                  weather_str = "DZ" # Fallback if numeric rain exists but text says otherwise
+           else:
+               # If no numeric rain, rely on text description
+               if is_shower:
+                   weather_str = "SHRA" # Default light shower
+               elif is_rain:
+                   weather_str = "RA"   # Default light rain
+               elif is_thunderstorm:
+                   weather_str = "TSRA" # Default Thunderstorm 
+               else:
+                   weather_str = "DZ"    # Drizzle for very tiny amounts
 
         # Infer weather if data is missing 
         # Check if explicit cloud data was found in the previous section
@@ -808,27 +808,14 @@ def weather():
 
         # Only add RMK if EITHER value is strictly greater than 0
         if r1h_mm > 0 or r24h_mm > 0:
-            # Convert mm to inches (1 mm = 0.0393701 inches)
-            r1h_in = r1h_mm * 0.0393701
-            r24h_in = r24h_mm * 0.0393701
-            
-            remark_parts = []
-            
-            # 1. 1-hour rain -> P code (Standard METAR: Pxxxx = Precipitation in last hour)
-            if r1h_in > 0:
-                val = round(r1h_in, 2)
-                # Format to string with 2 decimals, remove dot, pad to 4 chars
-                digits = f"{val:.2f}".replace('.', '').ljust(4, '0')[:4]
-                remark_parts.append(f"P{digits}")
-            
-            # 2. 24-hour (9 AM) rain -> 7 code (Standard METAR: 7xxxx = Precipitation in last 24 hours)
-            if r24h_in > 0:
-                val = round(r24h_in, 2)
-                digits = f"{val:.2f}".replace('.', '').ljust(4, '0')[:4]
-                remark_parts.append(f"7{digits}")
-            
-            if remark_parts:
-                metar_line += " RMK " + " ".join(remark_parts)
+           # Format 1-hour rainfall (e.g., 00.1)
+           r1h_str = f"{r1h_mm:04.1f}"
+
+           # Format 9 AM / daily rainfall (e.g., 001.8)
+           r24_str = f"{r24h_mm:05.1f}"
+
+           # Append RMK line: RMK RFrr.r/rrr.r
+           metar_line += f" RMK RF{r1h_str}/{r24_str}"
 
         # Append the final line to output
         output_lines.append(metar_line)
