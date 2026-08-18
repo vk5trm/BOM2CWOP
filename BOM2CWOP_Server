@@ -334,17 +334,17 @@ def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt,
     # 2. Check for Rain-Induced Clouds
     if not data_found and has_rain:
         if vis_str == "9999":
-            if rain_mm_val >= 5.0:
-                vis_str = "0500"   # Heavy
-                base_ft_final = 500 
-            elif rain_mm_val >= 1.0:
-                vis_str = "1000"   # Moderate
+            if rain_mm_val > 7.5:      # Heavy (> 7.5 mm/h)
+                vis_str = "1000"       #< 1 km
+                base_ft_final = 500
+            elif rain_mm_val  >= 7.5:  # Moderate (2.5 – 7.5 mm/h)
+                vis_str = "2500"       # 1 km – 5 km
                 base_ft_final = 1000 
-            elif rain_mm_val >= 0.1:
-                vis_str = "2500"   # Light
+            elif rain_mm_val < 2.5:    # Light (< 2.5 mm/h)
+                vis_str = "5000"       # > 5 km
                 base_ft_final = 1500 
             else:
-                vis_str = "5000"   # Fallback for very tiny amounts
+                vis_str = "7500"   # Fallback for very tiny amounts
                 base_ft_final = 2500
             metar_amount = "OVC"
             data_found = True
@@ -683,11 +683,11 @@ def weather():
         if has_rain and weather_str == "":
            if rain_mm_val is not None:
               # Determine intensity first
-              if rain_mm_val >= 5.0:
+              if rain_mm_val > 7.5:    # Heavy Rain (> 7.5 mm/h)
                   intensity = "+"
-              elif rain_mm_val >= 1.0:
+              elif rain_mm_val >= 7.5:    # Moderate Rain (2.5 – 7.5 mm/h)
                   intensity = ""
-              elif rain_mm_val >= 0.1:
+              elif rain_mm_val < 2.5:  # Light Rain (< 2.5 mm/h)
                   intensity = "-"
               else:
                   intensity = "" # Default for very light
@@ -700,7 +700,7 @@ def weather():
               elif is_thunderstorm:
                   weather_str = f"{intensity}TSRA"
               else:
-                  weather_str = "DZ" # Fallback if numeric rain exists but text says otherwise
+                  weather_str = f"{intensity}RA" # Fallback if numeric rain exists but text says otherwise
            else:
                # If no numeric rain, rely on text description
                if is_shower:
@@ -709,8 +709,6 @@ def weather():
                    weather_str = "RA"   # Default light rain
                elif is_thunderstorm:
                    weather_str = "TSRA" # Default Thunderstorm 
-               else:
-                   weather_str = "DZ"    # Drizzle for very tiny amounts
 
         # Infer weather if data is missing 
         # Check if explicit cloud data was found in the previous section
