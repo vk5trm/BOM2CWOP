@@ -334,18 +334,15 @@ def _infer_missing_weather(obs, humidity, temp_c, wind_kt_int, wind_spd_kt,
     # 2. Check for Rain-Induced Clouds
     if not data_found and has_rain:
         if vis_str == "9999":
-            if rain_mm_val > 7.5:      # Heavy (> 7.5 mm/h)
+            if rain_mm_val > 1.25:      # Heavy
                 vis_str = "1000"       #< 1 km
                 base_ft_final = 500
-            elif rain_mm_val  >= 7.5:  # Moderate (2.5 – 7.5 mm/h)
+            elif rain_mm_val  >= 0.5:  # Moderate
                 vis_str = "2500"       # 1 km – 5 km
                 base_ft_final = 1000 
-            elif rain_mm_val < 2.5:    # Light (< 2.5 mm/h)
+            else:                      # Light
                 vis_str = "5000"       # > 5 km
                 base_ft_final = 1500 
-            else:
-                vis_str = "7500"   # Fallback for very tiny amounts
-                base_ft_final = 2500
             metar_amount = "OVC"
             data_found = True
 
@@ -471,7 +468,7 @@ def weather():
 
         # --- Rain Extraction (Safe) ---
         rain_mm_val = None
-        rain_mm_raw = obs.get('rain_hour')
+        rain_mm_raw = obs.get('rain_ten')
         if rain_mm_raw is not None:
             try:
                 rain_mm_val = float(rain_mm_raw)
@@ -483,7 +480,7 @@ def weather():
         # Separate checks for Rain vs Showers
         is_rain = any(word in weather_lower for word in ("rain",))
         is_shower = any(word in weather_lower for word in ("shower", "showers"))
-        is_thunderstorm = any(word in weather_lower for word in ("thunder",))
+        is_thunderstorm = any(word in weather_lower for word in ("thunder", "thunderstorm",))
 
         # has_rain remains true if EITHER is present (or if numeric rain exists)
         has_rain = is_rain or is_shower or is_thunderstorm or (rain_mm_val is not None and rain_mm_val > 0)
@@ -683,15 +680,13 @@ def weather():
         if has_rain and weather_str == "":
            if rain_mm_val is not None:
               # Determine intensity first
-              if rain_mm_val > 7.5:    # Heavy Rain (> 7.5 mm/h)
+              if rain_mm_val > 1.25:     # Heavy Rain
                   intensity = "+"
-              elif rain_mm_val >= 7.5:    # Moderate Rain (2.5 – 7.5 mm/h)
+              elif rain_mm_val >= 0.5:    # Moderate Rain
                   intensity = ""
-              elif rain_mm_val < 2.5:  # Light Rain (< 2.5 mm/h)
+              else:                       # Light Rain
                   intensity = "-"
-              else:
-                  intensity = "" # Default for very light
-                
+
               # Determine type: Showers take precedence if detected
               if is_shower:
                   weather_str = f"{intensity}SHRA"
