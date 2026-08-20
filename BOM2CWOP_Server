@@ -15,6 +15,7 @@ import math
 from socket import *
 import requests
 from flask import Flask, jsonify, render_template_string, Response, request
+from datetime import datetime
 
 # --- USER CONFIGURATION ---
 # Format: "ProductCode.StationID": { "aprs_call": "CALLSIGN", "ICAO": "ICAO code" }
@@ -466,6 +467,20 @@ def weather():
         press_hpa = obs.get('press_qnh')
         vis_km = obs.get('vis_km') or obs.get('vis') or obs.get('visibility')
 
+       # --- Get METAR Time from aifstime_utc if available ---
+        metar_time = None
+        aifstime = obs.get('aifstime_utc')
+
+        if aifstime and len(aifstime) >= 12:
+           # Format: YYYYMMDDHHMMSS → extract DD, HH, MM
+           day = aifstime[6:8]
+           hour = aifstime[8:10]
+           minute = aifstime[10:12]
+           metar_time = f"{day}{hour}{minute}Z"
+        else:
+            # Fallback to system time if field missing or malformed
+            metar_time = time.strftime("%d%H%MZ", time.gmtime())
+
         # --- Rain Extraction (Safe) ---
         rain_mm_val = None
         rain_mm_raw = obs.get('rain_ten')
@@ -757,16 +772,15 @@ def weather():
         # 1. Visibility >= 10km (9999)
         # 2. No cloud below 5000ft (SKC)
         # 3. No significant weather (weather_str is empty)
-        
+
         is_cavok = False
         if vis_str == "9999" and cloud_str == "SKC" and not weather_str:
             is_cavok = True
 
         # --- Construct METAR Line ---
-        metar_time = time.strftime("%d%H%MZ", time.gmtime())
-        
         # Start with base components
         metar_parts = [
+            'METAR',
             station_code,
             metar_time,
             wind_str
