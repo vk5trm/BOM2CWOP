@@ -127,15 +127,14 @@ def str_or_dots(number, length):
         return '.' * length
 
 def make_aprs_wx(lat_str, lon_str, comment="BOMWX", wind_dir=None, wind_speed=None, wind_gust=None,
-                 temperature=None, rain_hour=None, rain_day=None, humidity=None, pressure=None):
-    return '!%s/%s_%s/%sg%st%sr%sp%sh%sb%s%s' % (
+                 temperature=None, rain_hour=None, humidity=None, pressure=None):
+    return '!%s/%s_%s/%sg%st%sr%sh%sb%s%s' % (
         lat_str, lon_str,
         str_or_dots(wind_dir, 3),
         str_or_dots(wind_speed, 3),
         str_or_dots(wind_gust, 3),
         str_or_dots(temperature, 3),
         str_or_dots(rain_hour, 3),
-        str_or_dots(rain_day, 3), 
         str_or_dots(humidity, 2),
         str_or_dots(pressure, 5),
         comment
@@ -183,12 +182,6 @@ def bom_json_to_aprs(obs, comment="BOMWX", station_name=None):
         rain_in = rain_mm * 3.93700787
     except:
         rain_in = None
-    try:
-        rain_24_mm = float(obs.get('rain_trace', 0.0))
-        rain_24_in = rain_24_mm * 3.93700787
-    except:
-        rain_24_in = None
-
     try:
         humidity = float(obs.get('rel_hum'))
     except:
@@ -240,7 +233,7 @@ def bom_json_to_aprs(obs, comment="BOMWX", station_name=None):
         comment = f"{station_name} WX"
     
     return make_aprs_wx(lat_str, lon_str, comment=comment, temperature=temp_f, pressure=press_hpa,
-                        rain_hour=rain_in, rain_day=rain_24_in, humidity=humidity, wind_speed=wind_speed,
+                        rain_hour=rain_in, humidity=humidity, wind_speed=wind_speed,
                         wind_gust=wind_gust, wind_dir=wind_deg_val)
   
 def fetch_bom_data(station_id, product_code):
